@@ -59,6 +59,12 @@
   let richGfx = true;     // リッチ(沿道装飾・空) / シンプル
   let aiDiff = 'normal';  // CPUの強さ: weak | normal | strong | super
   let chaosLevel = 0;     // 0=OFF / 1=カオス(×10) / 2=スーパー(×15) / 3=ハイパー(×20) / 4=エラー(×100)
+  // 公開版(GitHub Pages 等の *.github.io)は重くなりすぎないよう上限を「スーパーカオス」に制限。
+  // ローカル(file:// / localhost)は従来どおり全カオス(本当のカオス=5)まで開放。
+  const _host = (typeof location !== 'undefined' && location.hostname) || '';
+  const _qs = (typeof location !== 'undefined' && location.search) || '';
+  const isPublished = /(^|\.)github\.io$/i.test(_host) || /[?&]pub=1/.test(_qs);   // ?pub=1 で公開版相当を確認可
+  const CHAOS_CAP = isPublished ? 2 : 5;   // 到達できる最大カオスレベル(2=スーパー)
   let superUnlocked = false;   // スーパーカオス解放済みか(カオス設定5連打で解放)
   let hyperUnlocked = false;   // ハイパーカオス解放済みか(解放後さらに10連打で解放)
   let errorUnlocked = false;   // エラーカオス解放済みか(解放後さらに13連打で解放)
@@ -242,7 +248,7 @@
     if (cl === 4 && !errorUnlocked) cl = hyperUnlocked ? 3 : superUnlocked ? 2 : 1;
     if (cl === 3 && !hyperUnlocked) cl = superUnlocked ? 2 : 1;
     if (cl === 2 && !superUnlocked) cl = 1;
-    chaosLevel = cl;
+    chaosLevel = Math.min(cl, CHAOS_CAP);   // 公開版は上限(スーパー)までに丸める
     gpReviveCpu = (s.gpReviveCpu !== false);
     if (s.dmgIdxP != null && s.dmgIdxP >= 0 && s.dmgIdxP < DMG_OPTS.length) dmgIdxP = s.dmgIdxP;
     if (s.dmgIdxC != null && s.dmgIdxC >= 0 && s.dmgIdxC < DMG_CPU.length) dmgIdxC = s.dmgIdxC;
@@ -491,12 +497,12 @@
     chaosBtn.classList.toggle('error-unlocked', errorUnlocked && !trueUnlocked);
     chaosBtn.classList.toggle('true-unlocked', trueUnlocked);   // 解放状況を見た目で表示
   }
-  const maxLevel = () => (trueUnlocked ? 5 : errorUnlocked ? 4 : hyperUnlocked ? 3 : superUnlocked ? 2 : 1);
+  const maxLevel = () => Math.min(CHAOS_CAP, trueUnlocked ? 5 : errorUnlocked ? 4 : hyperUnlocked ? 3 : superUnlocked ? 2 : 1);
   chaosBtn.addEventListener('click', () => {
     const now = Date.now();
     chaosStreak = (now - chaosLast < 600) ? chaosStreak + 1 : 1;   // 0.6秒以内なら連打継続
     chaosLast = now;
-    if (chaosStreak >= 31 && errorUnlocked) {                // 31連打 → 本当のカオス解放+ON
+    if (chaosStreak >= 31 && errorUnlocked && CHAOS_CAP >= 5) {     // 31連打 → 本当のカオス解放+ON
       const wasNew = !trueUnlocked;
       trueUnlocked = true;
       try { localStorage.setItem('truechaos_unlocked', '1'); } catch (e) {}
@@ -504,7 +510,7 @@
       if (wasNew) { chaosBtn.textContent = '🌪 本当のカオス 解放！！！！'; setTimeout(updateChaosUI, 1800); }
       return;
     }
-    if (chaosStreak >= 13 && hyperUnlocked) {                // 13連打 → エラーカオス解放+ON
+    if (chaosStreak >= 13 && hyperUnlocked && CHAOS_CAP >= 4) {     // 13連打 → エラーカオス解放+ON
       const wasNew = !errorUnlocked;
       errorUnlocked = true;
       try { localStorage.setItem('errorchaos_unlocked', '1'); } catch (e) {}
@@ -512,7 +518,7 @@
       if (wasNew) { chaosBtn.textContent = '💥 ERROR CHAOS UNLOCKED 💥'; setTimeout(updateChaosUI, 1700); }
       return;
     }
-    if (chaosStreak >= 10 && superUnlocked) {                // 10連打 → ハイパー解放+ON
+    if (chaosStreak >= 10 && superUnlocked && CHAOS_CAP >= 3) {     // 10連打 → ハイパー解放+ON
       const wasNew = !hyperUnlocked;
       hyperUnlocked = true;
       try { localStorage.setItem('hyperchaos_unlocked', '1'); } catch (e) {}
