@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>ターボ・カート・ラッシュ</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- 昭和の白黒ブラウン管演出(白黒モード時のみ表示・操作は透過) -->
+  <div id="crt-overlay" aria-hidden="true"><div class="roll"></div></div>
+
+  <!-- ゲーム中の小ツールバー -->
+  <div id="toolbar" class="hidden">
+    <button id="btn-mute" title="音楽オン/オフ">🔊</button>
+    <button id="btn-pause" title="ポーズ">⏸</button>
+  </div>
+
+  <!-- オーバーレイ画面群 -->
+  <div id="overlay">
+
+    <!-- タイトル -->
+    <section id="screen-title" class="screen active">
+      <h1 class="logo">TURBO KART<br><span>RUSH</span></h1>
+      <p class="tag">ターボ・カート・ラッシュ</p>
+      <div class="btn-col">
+        <button class="big" id="gp-resume" hidden>▶ グランプリの続きから</button>
+        <button class="big" data-mode="gp">🏆 グランプリ（CPU 1〜19台・全9コース連戦／突風・分岐・超超超超激ムズ含む）</button>
+        <button class="big" data-mode="time">⏱ タイムアタック（1人・タイム勝負）</button>
+        <button class="big" data-mode="vs">🆚 VS（1〜4人＋CPU 0〜5台・人数を選べる）</button>
+        <button class="ghost" id="to-help">あそびかた / そうさ</button>
+        <button class="ghost" id="cpu-toggle">🤖 CPUの強さ: 普通</button>
+        <button class="ghost" id="chaos-toggle">🌀 カオスモード: OFF</button>
+        <button class="ghost" id="revive-toggle">🚑 リタイヤCPU(GP): 次戦で復活</button>
+        <button class="ghost" id="dmg-toggle">💥 自分のダメージ: 1/2</button>
+        <button class="ghost" id="dmg-cpu-toggle">💥 CPUのダメージ: 通常</button>
+        <button class="ghost" id="offcourse-toggle">🌱 コース外ダメージ: あり</button>
+        <button class="ghost" id="speed-toggle">🏎 最高速: 通常</button>
+        <button class="ghost" id="phys-toggle">⚛ 高精度物理: OFF</button>
+        <button class="ghost" id="trans-toggle">⚙ ミッション: オートマ（AT）</button>
+        <button class="ghost" id="music-toggle">🎵 音楽: ピコピコ</button>
+        <button class="ghost" id="gfx-toggle">🖼 画質: リッチ</button>
+        <button class="ghost" id="bw-toggle">📺 白黒（昭和）モード: OFF</button>
+        <button class="ghost mirror-only" id="mirror-toggle" hidden>🪞 ミラーモード: OFF</button>
+        <button class="ghost mirror-only" id="mirrorctl-toggle" hidden>↔ 操作も反転: OFF</button>
+        <button class="ghost pedal-only" id="pedal-toggle" hidden>🔁 アクセル/ブレーキ反転: OFF</button>
+      </div>
+      <p class="hint">独自要素 🪝 <b>グラップル・ダッシュ</b>：前のカートにロックオンして高速で引き寄せ、一気にごぼう抜き！</p>
+    </section>
+
+    <!-- グランプリ 設定 -->
+    <section id="screen-gp" class="screen">
+      <h2>グランプリ設定</h2>
+      <p class="tag">全9コース連戦・ポイント制</p>
+      <div class="vs-row">
+        <span class="vs-label">CPUの数（1〜19）</span>
+        <div class="stepper">
+          <button id="gp-cpu-minus">−</button>
+          <span id="gp-cpu-val">9</span>
+          <button id="gp-cpu-plus">＋</button>
+        </div>
+      </div>
+      <p class="hint" id="gp-summary"></p>
+      <div class="btn-col">
+        <button class="big" id="gp-start">🏁 グランプリ スタート！</button>
+        <button class="ghost" data-back="title">← もどる</button>
+      </div>
+    </section>
+
+    <!-- VS 設定 -->
+    <section id="screen-vs" class="screen">
+      <h2>VS たいせん設定</h2>
+      <div class="vs-row">
+        <span class="vs-label">プレイヤー人数</span>
+        <div class="seg" id="vs-players">
+          <button data-v="1">1人</button><button data-v="2">2人</button>
+          <button data-v="3">3人</button><button data-v="4">4人</button>
+          <button class="vs8-only" data-v="5" hidden>5人</button><button class="vs8-only" data-v="6" hidden>6人</button>
+          <button class="vs8-only" data-v="7" hidden>7人</button><button class="vs8-only" data-v="8" hidden>8人</button>
+        </div>
+      </div>
+      <div class="vs-row">
+        <span class="vs-label">CPUの数</span>
+        <div class="seg" id="vs-cpu">
+          <button data-v="0">0</button><button data-v="1">1</button><button data-v="2">2</button>
+          <button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button>
+        </div>
+      </div>
+      <div class="vs-row">
+        <span class="vs-label">変速（各プレイヤー）</span>
+        <div class="seg" id="vs-trans"></div>
+      </div>
+      <p class="hint" id="vs-summary"></p>
+      <div class="btn-col">
+        <button class="big" id="vs-go">コースをえらぶ →</button>
+        <button class="ghost" data-back="title">← もどる</button>
+      </div>
+    </section>
+
+    <!-- コース選択 -->
+    <section id="screen-course" class="screen">
+      <h2>コースをえらぶ</h2>
+      <div id="course-list"></div>
+      <button class="ghost" data-back="title">← もどる</button>
+    </section>
+
+    <!-- あそびかた -->
+    <section id="screen-help" class="screen">
+      <h2>あそびかた</h2>
+      <div class="help-grid">
+        <div class="ctrl-card">
+          <h3>1P（レッド）</h3>
+          <ul>
+            <li><b>W</b> アクセル / <b>S</b> ブレーキ・バック</li>
+            <li><b>A / D</b> 左右ハンドル</li>
+            <li><b>左Shift</b> ドリフト（曲がりながら溜めてミニターボ）</li>
+            <li><b>Space</b> アイテム使用</li>
+            <li><b>E</b> シフトアップ / <b>Q</b> シフトダウン（セミAT・MT時）</li>
+          </ul>
+        </div>
+        <div class="ctrl-card">
+          <h3>2P（ブルー）</h3>
+          <ul>
+            <li><b>↑</b> アクセル / <b>↓</b> ブレーキ・バック</li>
+            <li><b>← / →</b> 左右ハンドル</li>
+            <li><b>右Shift</b> ドリフト</li>
+            <li><b>Enter</b> アイテム使用</li>
+            <li><b>.（ピリオド）</b> シフトアップ / <b>,（カンマ）</b> シフトダウン（セミAT・MT時）</li>
+          </ul>
+        </div>
+        <div class="ctrl-card">
+          <h3>3P（イエロー）</h3>
+          <ul>
+            <li><b>I</b> アクセル / <b>K</b> ブレーキ・バック</li>
+            <li><b>J / L</b> 左右ハンドル</li>
+            <li><b>U</b> ドリフト / <b>O</b> アイテム使用</li>
+            <li><b>P</b> シフトアップ / <b>;（セミコロン）</b> シフトダウン</li>
+          </ul>
+        </div>
+        <div class="ctrl-card">
+          <h3>4P（グリーン）</h3>
+          <ul>
+            <li><b>T</b> アクセル / <b>G</b> ブレーキ・バック</li>
+            <li><b>F / H</b> 左右ハンドル</li>
+            <li><b>R</b> ドリフト / <b>Y</b> アイテム使用</li>
+            <li><b>B</b> シフトアップ / <b>V</b> シフトダウン</li>
+          </ul>
+        </div>
+        <div class="ctrl-card">
+          <h3>🎮 コントローラ（Bluetooth/USB）</h3>
+          <ul>
+            <li>接続後、ボタンを一度押すと有効化されます</li>
+            <li><b>A / R2</b> アクセル / <b>B / L2</b> ブレーキ</li>
+            <li><b>左スティック / 十字キー</b> ハンドル</li>
+            <li><b>R1</b> ドリフト / <b>X</b> アイテム</li>
+            <li><b>Y</b> シフトアップ / <b>L1</b> シフトダウン</li>
+            <li>P1=1台目, P2=2台目…の順に割り当て（キーボードと併用可）</li>
+          </ul>
+        </div>
+      </div>
+      <p class="hint">VS は <b>1〜4人＋CPU 0〜5台</b>。3〜4人は画面を2×2分割。3人時は右下に順位表が出ます。各プレイヤーはキーボードでも<b>コントローラ</b>でも操作できます。</p>
+      <div class="item-legend">
+        <h3>ミッション（変速）</h3>
+        <p>タイトルの <b>⚙ ミッション</b> で AT（全自動）→ セミAT（自動＋手動シフト可）→ MT（完全手動）を切替。MT/セミAT では上のシフトキーでギア（N/R/1〜5）を操作します。</p>
+      </div>
+      <div class="item-legend">
+        <h3>アイテム</h3>
+        <p>🍄キノコ=加速 / 🍌バナナ=設置 / 🟢グリーンボール=直進 / 🔴レッドボール=追尾 / ⭐スター=無敵＆BGMチェンジ / 💣ボムへい=爆発 / 🪝<b>グラップル・ダッシュ</b>=前のカートにロックオンして引き寄せ（独自要素・マリオカートに無い）</p>
+      </div>
+      <button class="ghost" data-back="title">← もどる</button>
+    </section>
+
+    <!-- リザルト -->
+    <section id="screen-results" class="screen">
+      <h2 id="result-title">リザルト</h2>
+      <p id="result-sub" class="tag"></p>
+      <ol id="result-list"></ol>
+      <div class="btn-col">
+        <button class="big" id="next-race">▶ 次のレースへ</button>
+        <button class="big" id="rematch">🔄 もう一度（同じコース）</button>
+        <button class="ghost" id="change-course">コースを変える</button>
+        <button class="ghost" id="to-title">タイトルへ</button>
+      </div>
+    </section>
+
+    <!-- ゲームオーバー(ライフ0) -->
+    <section id="screen-gameover" class="screen">
+      <h2>💥 ゲームオーバー</h2>
+      <p id="gameover-sub" class="tag">ライフが尽きてリタイア…</p>
+      <div class="btn-col">
+        <button class="big" id="gameover-retry">🔄 もう一度</button>
+        <button class="ghost" id="gameover-title">タイトルへもどる</button>
+      </div>
+    </section>
+
+    <!-- ポーズ -->
+    <section id="screen-pause" class="screen overlay-dim">
+      <h2>ポーズ中</h2>
+      <div class="btn-col">
+        <button class="big" id="resume">▶ つづける</button>
+        <button class="ghost" id="quit">タイトルへもどる</button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- スマホ等タッチ端末用の操作パネル(半透明)。1人プレイ時にのみ表示 -->
+  <div id="touch-controls" aria-hidden="true">
+    <div class="tc-pad tc-left-pad">
+      <button class="tc-btn tc-steer" data-k="left">◀</button>
+      <button class="tc-btn tc-steer" data-k="right">▶</button>
+    </div>
+    <div class="tc-pad tc-right-pad">
+      <!-- ギア(セミAT/MT選択時のみ表示) -->
+      <div class="tc-shift-col" id="tc-shift">
+        <button class="tc-btn tc-mini tc-shiftup" data-k="shiftUp">ギア▲</button>
+        <button class="tc-btn tc-mini tc-shiftdown" data-k="shiftDown">ギア▼</button>
+      </div>
+      <div class="tc-main-grid">
+        <button class="tc-btn tc-mini tc-item" data-k="item">✦</button>
+        <button class="tc-btn tc-mini tc-drift" data-k="drift">ドリフト</button>
+        <button class="tc-btn tc-brake" data-k="brake">ブレーキ</button>
+        <button class="tc-btn tc-accel" data-k="accel">アクセル</button>
+      </div>
+    </div>
+  </div>
+  <div id="tc-rotate">↔ 横向きでのプレイがおすすめです</div>
+
+  <script src="js/tracks.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# OS / エディタ
+.DS_Store
+Thumbs.db
+
+# 一時・テスト用の作業ファイル
+*.bak
+__*.html
+
+# デプロイ関連
+.netlify/
+.vercel/
+node_modules/

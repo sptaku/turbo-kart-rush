@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>track</title>
+<style>html,body{margin:0;background:#15151c}#c{display:block}</style></head>
+<body>
+<canvas id="c"></canvas>
+<script src="../js/tracks.js"></script>
+<script src="../js/audio.js"></script>
+<script src="../js/input.js"></script>
+<script src="../js/game.js"></script>
+<script>
+  const q = new URLSearchParams(location.search);
+  const ti = parseInt(q.get('track') || '0', 10);
+  const def = TRACKS[ti];
+  const t = new Track(def);
+  const cv = document.getElementById('c');
+  const W = 1000, H = 720; cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#15151c'; g.fillRect(0, 0, W, H);
+  const sc = Math.min((W - 40) / t.w, (H - 40) / t.h);
+  const ox = (W - t.w * sc) / 2, oy = (H - t.h * sc) / 2;
+  g.drawImage(t.canvas, ox, oy, t.w * sc, t.h * sc);
+  // 中心線ウェイポイント(番号)
+  g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.font = 'bold 16px sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  def.waypoints.forEach((w, i) => {
+    const x = ox + w[0] * t.tile * sc, y = oy + w[1] * t.tile * sc;
+    g.fillStyle = i === 0 ? '#ffd23f' : '#fff';
+    g.beginPath(); g.arc(x, y, 12, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#000'; g.fillText(i, x, y);
+  });
+  // タイトル
+  g.fillStyle = '#fff'; g.font = 'bold 20px sans-serif'; g.textAlign = 'left';
+  g.fillText(def.name + '  (' + def.cols + 'x' + def.rows + ', road ' + (def.roadHalf * 2).toFixed(1) + 't)', 16, 24);
+</script>
+</body></html>

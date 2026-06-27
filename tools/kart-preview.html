@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#1a1d28">
+<canvas id="c" width="1080" height="420"></canvas>
+<script src="../js/tracks.js"></script><script src="../js/audio.js"></script>
+<script src="../js/input.js"></script><script src="../js/game.js"></script>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const g=Object.create(Game.prototype); g.time=0.6; g.slowTimer=0;
+const kinds=Object.keys(KART_KINDS);
+const cols=['#e8412e','#2f7df0','#f2c233','#34c24a','#9b59f0','#ff8c1a'];
+const darks=['#a82518','#1c4fa8','#b8901a','#1f8030','#6a32b0','#c25e00'];
+ctx.font='20px sans-serif';ctx.textAlign='center';ctx.fillStyle='#fff';
+kinds.forEach((kind,i)=>{
+  const x=90+i*(900/ (kinds.length-1||1)); // spread
+  const cx=70+i*165, cy=210;
+  const kart={def:{body:cols[i%6],dark:darks[i%6],kind},invincTimer:0,spinTimer:0,boostTimer:0,control:{throttle:1},speed:280};
+  g._kartSprite(ctx,cx,cy,150,kart,false);
+  ctx.fillStyle='#fff';ctx.fillText(KART_KINDS[kind].label||kind,cx,cy+120);
+});
+document.title='READY';
+</script></body>

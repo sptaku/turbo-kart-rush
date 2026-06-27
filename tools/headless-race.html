@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>headless</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}#game{display:block}</style>
+</head><body>
+<canvas id="game"></canvas>
+<script src="../js/tracks.js"></script>
+<script src="../js/audio.js"></script>
+<script src="../js/input.js"></script>
+<script src="../js/game.js"></script>
+<script>
+  // 実Canvasでレースを走らせる(音は鳴らさない/AIが走行)
+  const q = new URLSearchParams(location.search);
+  const trackIndex = parseInt(q.get('track') || '0', 10);
+  const players = parseInt(q.get('players') || '1', 10);
+  const steer = parseFloat(q.get('steer') || '0');
+  const warmup = parseInt(q.get('warmup') || '0', 10);
+  const mirror = q.get('mirror') === '1';
+  const karts = parseInt(q.get('karts') || '0', 10);
+  const g = new Game(document.getElementById('game'));
+  g.onFinish = () => {};
+  g.startRace({ trackIndex, players, mirror, numKarts: karts || undefined });
+  // 撮影用: 人間カートはAIライン追従で走らせる(コースに沿った走行中の絵にする)
+  g._readHuman = (k) => { k.computeAI(g); };
+  // 撮影用: カウントダウンを飛ばし、事前に warmup フレーム走らせて走行中の状態にする
+  if (warmup > 0) {
+    g.state = 'racing'; g.countdown = 0; g.raceTime = 0;
+    for (let i = 0; i < warmup; i++) g.update(1 / 60);
+  }
+  // 検証用: 指定プレイヤーを爆発させる(VSの脱落画面確認)
+  const explode = parseInt(q.get('explode') || '-1', 10);
+  if (explode >= 0 && g.humans[explode]) { g.humans[explode].life = 1; g.humans[explode].hurt(999, g); g.update(1 / 60); }
+  // 検証用: ライバルを自機の直前に配置(大きさ比較ショット)
+  if (q.get('stage') === '1') {
+    const me = g.humans[0];
+    const rival = g.karts.find((k) => !k.isHuman);
+    if (rival) {
+      rival.x = me.x + Math.cos(me.angle) * 230;
+      rival.y = me.y + Math.sin(me.angle) * 230;
+      rival.angle = me.angle;
+    }
+  }
+  // 検証用: ライバルを自機の真正面 rivdist(world px) 前方に置いて当たり判定の見え方を確認
+  const rivdist = parseFloat(q.get('rivdist') || '0');
+  if (rivdist > 0) {
+    const me = g.humans[0];
+    const rival = g.karts.find((k) => !k.isHuman);
+    if (rival) {
+      me.speed = 0;
+      rival.x = me.x + Math.cos(me.angle) * rivdist;
+      rival.y = me.y + Math.sin(me.angle) * rivdist;
+      rival.angle = me.angle; rival.speed = 0;
+      const min = me.bodyR + rival.bodyR;
+      document.title = 'collide=' + ((rivdist * rivdist) < min * min) + ' min=' + min;
+      g.update = () => {};   // 以降フリーズ(配置を保ったまま撮影)
+      g.render();
+    }
+  }
+  // 検証用: ライバルを自機の後方/横に置く(警告矢印・ミニマップの確認)
+  if (q.get('stage') === '4') {
+    const me = g.humans[0];
+    const rivals = g.karts.filter((k) => !k.isHuman);
+    if (rivals[0]) { rivals[0].x = me.x - Math.cos(me.angle) * 120; rivals[0].y = me.y - Math.sin(me.angle) * 120; rivals[0].angle = me.angle; }
+    if (rivals[1]) { rivals[1].x = me.x - Math.sin(me.angle) * 150; rivals[1].y = me.y + Math.cos(me.angle) * 150; rivals[1].angle = me.angle; }
+    g.update = () => {};
+  }
+  // 検証用: グラップル・ダッシュ発動中で固定
+  if (q.get('stage') === '5') {
+    const me = g.humans[0];
+    const rival = g.karts.find((k) => !k.isHuman);
+    if (rival) { rival.x = me.x + Math.cos(me.angle) * 500; rival.y = me.y + Math.sin(me.angle) * 500; rival.place = me.place - 1; }
+    me.item = 'grapple';
+    g.useItem(me);
+    for (let i = 0; i < 12; i++) g.update(1 / 60);
+    g.update = () => {};
+  }
+  // 検証用: 緑こうらを発射した直後で固定(発射位置の確認)
+  if (q.get('stage') === '3') {
+    const me = g.humans[0];
+    me.item = 'green';
+    g.useItem(me);
+    for (let i = 0; i < 7; i++) g.update(1 / 60);   // 少し飛ばす
+    g.update = () => {};
+  }
+  // 検証用: ライバルを自機に重ねて衝突を起こし、その瞬間で固定(フラッシュ確認)
+  if (q.get('stage') === '2') {
+    const me = g.humans[0];
+    const rival = g.karts.find((k) => !k.isHuman);
+    if (rival) { rival.x = me.x + 20; rival.y = me.y + 10; rival.angle = me.angle; }
+    g.update(1 / 60);          // 衝突を発生させる
+    g.update = () => {};        // 以降フリーズして演出を保持
+  }
+</script>
+</body></html>
