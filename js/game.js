@@ -139,6 +139,14 @@ class Track {
       return { ex: ex * this.tile, ey: ey * this.tile, tx: tx * this.tile, ty: ty * this.tile };
     });
     this.warpR = this.tile * 1.3;
+    // ミニマップが切れないよう、分岐路/ワープ点も表示範囲(bounds)に含める
+    const mg2 = this.tile * 2;
+    const expand = (x, y) => {
+      this.bounds.minX = Math.min(this.bounds.minX, x - mg2); this.bounds.minY = Math.min(this.bounds.minY, y - mg2);
+      this.bounds.maxX = Math.max(this.bounds.maxX, x + mg2); this.bounds.maxY = Math.max(this.bounds.maxY, y + mg2);
+    };
+    for (const bp of this.branchPaths) for (const p of bp) expand(p.x, p.y);
+    for (const w of this.warps) { expand(w.ex, w.ey); expand(w.tx, w.ty); }
     this._buildScenery(def);
     // 大コースでもメモリを抑えるためベイク画像は縮小解像度(最長辺~3000px)
     this.bakeScale = Math.min(0.7, 3000 / Math.max(this.w, this.h));
@@ -2534,6 +2542,29 @@ class Game {
     ctx.beginPath(); ctx.moveTo(sx(T.path[0].x), sy(T.path[0].y));
     for (let i = 1; i < T.path.length; i++) ctx.lineTo(sx(T.path[i].x), sy(T.path[i].y));
     ctx.closePath(); ctx.stroke();
+    // 分岐路(あれば): 本線とは別色で「もう一つのルート」として描く
+    if (T.branchPaths && T.branchPaths.length) {
+      ctx.strokeStyle = T.theme.accent || '#ff5ec4';
+      ctx.lineWidth = Math.max(2.5, mw * 0.055);
+      for (const bp of T.branchPaths) {
+        ctx.beginPath(); ctx.moveTo(sx(bp[0].x), sy(bp[0].y));
+        for (let i = 1; i < bp.length; i++) ctx.lineTo(sx(bp[i].x), sy(bp[i].y));
+        ctx.stroke();
+      }
+    }
+    // ワープ(あれば): 入口(マゼンタ)→出口(シアン)を点線リンク＋丸で表示
+    if (T.warps && T.warps.length) {
+      for (const w of T.warps) {
+        ctx.setLineDash([mw * 0.07, mw * 0.07]);
+        ctx.strokeStyle = 'rgba(150,220,255,0.75)'; ctx.lineWidth = Math.max(1.5, mw * 0.03);
+        ctx.beginPath(); ctx.moveTo(sx(w.ex), sy(w.ey)); ctx.lineTo(sx(w.tx), sy(w.ty)); ctx.stroke();
+        ctx.setLineDash([]);
+        const dot = Math.max(2.5, mw * 0.05);
+        ctx.fillStyle = '#ff4dd2'; ctx.beginPath(); ctx.arc(sx(w.ex), sy(w.ey), dot, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#7df0ff'; ctx.beginPath(); ctx.arc(sx(w.tx), sy(w.ty), dot, 0, TAU); ctx.fill();
+      }
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';   // 以降の描画用に本線色へ戻す
     // スタートライン
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(sx(T.path[0].x), sy(T.path[0].y), Math.max(2.5, mw * 0.04), 0, TAU); ctx.fill();
     // カート(自分は白縁の大きめドット、相手は色ドット)
