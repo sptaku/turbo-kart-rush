@@ -198,6 +198,41 @@ const T9_BRANCH1 = [[112, 116], [98, 110], [88, 98]];
 // 分岐2: 上部シケインを内側で抜けるタイトな近道(wp9→wp12)。
 const T9_BRANCH2 = [[84, 34], [74, 46], [54, 44], [40, 38], [28, 28]];
 
+// ---- Track10: ワープ・ネクサス(超超超超超超激ムズ・本線がワープ必須) ---------
+//   本線が各所で「空白(奈落)」に分断され、全幅のワープゲートを通らないと先へ進めない。
+//   ワープ橋: (gx,gy) に全幅ゲート(横列)＋その先 voidLen タイルの空白＋出口を生成。
+const WOFF = [-3.2, -2.4, -1.6, -0.8, 0, 0.8, 1.6, 2.4, 3.2];   // 道幅いっぱいの横列
+function warpBridge(gx, gy, dx, dy, voidLen) {
+  const px = -dy, py = dx;                                       // 進行に直交(横方向)
+  const ex = _r1(gx + dx * (voidLen + 2)), ey = _r1(gy + dy * (voidLen + 2));   // 出口(空白の先)
+  const gate = [], voids = [];
+  for (const o of WOFF) {
+    gate.push({ ex: _r1(gx + px * o), ey: _r1(gy + py * o), tx: ex, ty: ey });  // 各入口→共通の出口
+    for (let d = 1; d <= voidLen; d++) voids.push([_r1(gx + dx * d + px * o), _r1(gy + dy * d + py * o)]);
+  }
+  return { gate, voids };
+}
+// 複雑に巻いた周回(各直線にワープ橋)。ワープを通らないと空白に落ちて進めない。
+const T10 = [
+  [38, 130], [72, 132], [104, 130],     // 0-2 下ストレート(ワープ2か所)
+  [130, 122], [144, 102],               // 3-4 右下カーブ
+  [144, 78], [142, 56],                 // 5-6 右ストレート(ワープ)
+  [126, 38], [102, 32],                 // 7-8 右上カーブ
+  [86, 40], [74, 62], [54, 62], [42, 40],  // 9-12 中央へ潜る舌状の入り組み(ワープ)
+  [30, 34], [20, 56],                   // 13-14 左上カーブ
+  [22, 82], [24, 106],                  // 15-16 左ストレート(ワープ)
+  [30, 124],                            // 17 左下カーブ→スタート
+];
+const T10_BRIDGES = [
+  warpBridge(56, 131, 1, 0, 6),    // 下ストレート前半 →
+  warpBridge(90, 130, 1, 0, 6),    // 下ストレート後半 →
+  warpBridge(144, 88, 0, -1, 6),   // 右ストレート ↑
+  warpBridge(68, 62, -1, 0, 6),    // 中央の舌 ←
+  warpBridge(21, 92, 0, 1, 6),     // 左ストレート ↓
+];
+const T10_WARPS = T10_BRIDGES.flatMap((b) => b.gate);
+const T10_GAPS = T10_BRIDGES.flatMap((b) => b.voids);
+
 const TRACKS = [
   {
     id: 'meadow',
@@ -488,6 +523,35 @@ const TRACKS = [
     hazards: pick(T9, [5, 10, 14]),              // 右スイープ・上シケイン・左スイープに氷
     recover: pick(T9, [4, 14]),                  // ライフ回復ピット
     ramps: pick(T9, [15]),
+  },
+
+  {
+    id: 'nexus',
+    name: 'ワープ・ネクサス',
+    subtitle: 'Warp Nexus',
+    difficulty: '超超超超超超激ムズ',
+    laps: 3,
+    tile: 80,
+    cols: 158, rows: 140,
+    roadHalf: 2.5, shoulder: 0.7,                // 最狭。本線が空白で分断＝ワープ必須
+    music: 'race3',
+    hazardType: 'ice',
+    theme: {
+      sky: '#02060c', skyDk: '#000204',          // ほぼ漆黒の宇宙
+      grass: '#05121c', grassDk: '#020a12',
+      road: '#0e2630', roadDk: '#081820', line: '#5effd6',   // ティールに光る道
+      wall: '#ffcf3a', wallTop: '#fff0a8',       // 金の柵
+      curb1: '#5effd6', curb2: '#ffcf3a',        // ティール×金
+      boost: '#5effd6', item: '#ff8af0', hazard: '#bfe6ff',  // 氷
+      accent: '#5effd6',
+    },
+    waypoints: T10,
+    warps: T10_WARPS,                            // ★多数のワープ(全幅ゲート×5)
+    gaps: T10_GAPS,                              // ★各ゲートの先の空白(=ワープ必須)
+    items: itemRow(T10, [1, 4, 9, 15], [-0.7, 0, 0.7]),
+    boosts: pick(T10, [3, 13]),
+    hazards: pick(T10, [7, 11, 16]),             // 各コーナーに氷
+    recover: pick(T10, [5, 14]),                 // ライフ回復ピット
   },
 ];
 
