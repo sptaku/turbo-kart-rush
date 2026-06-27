@@ -1269,7 +1269,8 @@ class Game {
   _completeLap(k) {
     const now = this.raceTime || 0;
     k.lastLapTime = now - k._lapStart;
-    if (k.bestLap == null || k.lastLapTime < k.bestLap) k.bestLap = k.lastLapTime;
+    const isBest = (k.bestLap == null || k.lastLapTime < k.bestLap);
+    if (isBest) k.bestLap = k.lastLapTime;
     k._lapStart = now;
     k.lapCount++;
     if (k.lapCount >= this.def.laps) {
@@ -1277,6 +1278,11 @@ class Game {
       k.finishTime = now;
       this.finishOrder.push(k);
       if (k.isHuman) audio.sfxFinish();
+    } else if (k.isHuman) {
+      // 周回完了の告知(ラップタイム＋残り周回)＋専用チャイム
+      k._lapMsg = { time: k.lastLapTime, lapNum: k.lapCount, lapsLeft: this.def.laps - k.lapCount, best: isBest };
+      k._lapMsgUntil = this.time + 2.8;
+      audio.sfxLap();
     }
   }
 
@@ -2519,6 +2525,31 @@ class Game {
       ctx.fillText('🪝 グラップル・ダッシュ！', vp.x + vp.w / 2, vp.y + 52);
     }
     ctx.restore();
+
+    // 周回完了バナー(ラップタイム＋残り周回)。完了の瞬間にポップして数秒で消える。
+    if (k._lapMsg && this.time < k._lapMsgUntil) {
+      const DUR = 2.8, age = DUR - (k._lapMsgUntil - this.time);
+      const alpha = Math.min(1, age / 0.22, (k._lapMsgUntil - this.time) / 0.5);   // 出はスケールイン/終わりはフェード
+      const pop = 0.8 + 0.2 * Math.min(1, age / 0.3);
+      const s = clamp(Math.min(vp.w, vp.h * 1.4) / 640, 0.55, 1.3);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.translate(vp.x + vp.w / 2, vp.y + vp.h * 0.30);
+      ctx.scale(pop * s, pop * s);
+      ctx.textAlign = 'center';
+      const accent = k._lapMsg.best ? '#ffd23f' : '#5ef2ff';
+      const pw = 380, ph = 124;
+      ctx.fillStyle = 'rgba(8,10,24,0.82)'; this._roundRect(ctx, -pw / 2, -ph / 2, pw, ph, 16); ctx.fill();
+      ctx.lineWidth = 4; ctx.strokeStyle = accent; this._roundRect(ctx, -pw / 2, -ph / 2, pw, ph, 16); ctx.stroke();
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif';
+      ctx.fillText('LAP ' + k._lapMsg.lapNum + ' かんりょう！', 0, -26);
+      ctx.fillStyle = accent; ctx.font = 'bold 36px monospace';
+      ctx.fillText(fmtTime(k._lapMsg.time) + (k._lapMsg.best ? '  BEST!' : ''), 0, 14);
+      ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 24px sans-serif';
+      ctx.fillText('のこり ' + k._lapMsg.lapsLeft + ' 周', 0, 46);
+      ctx.restore();
+    }
 
     this._renderMinimap(ctx, vp, k);
   }

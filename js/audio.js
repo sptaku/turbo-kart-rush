@@ -491,6 +491,11 @@ class AudioSystem {
     const notes = [523, 659, 784, 1047];
     notes.forEach((f, i) => setTimeout(() => this._sfx([f], 0.25, 'square', 0.4, false), i * 120));
   }
+  sfxLap()      {   // 周回完了の合図(明るい上昇ダブルチャイム・ゴールとは別の音)
+    if (!this.ctx) return;
+    const notes = [880, 1319];   // A5 → E6
+    notes.forEach((f, i) => setTimeout(() => this._sfx([f], 0.2, 'triangle', 0.42, false), i * 95));
+  }
 }
 
 const audio = new AudioSystem();
