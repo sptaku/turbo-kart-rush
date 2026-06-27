@@ -2542,12 +2542,14 @@ class Game {
       ctx.fillStyle = 'rgba(8,10,24,0.82)'; this._roundRect(ctx, -pw / 2, -ph / 2, pw, ph, 16); ctx.fill();
       ctx.lineWidth = 4; ctx.strokeStyle = accent; this._roundRect(ctx, -pw / 2, -ph / 2, pw, ph, 16); ctx.stroke();
       ctx.textBaseline = 'alphabetic';
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif';
-      ctx.fillText('LAP ' + k._lapMsg.lapNum + ' かんりょう！', 0, -26);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.letterSpacing = '2px';
+      ctx.fillText('LAP ' + k._lapMsg.lapNum + ' COMPLETE', 0, -26);
       ctx.fillStyle = accent; ctx.font = 'bold 36px monospace';
       ctx.fillText(fmtTime(k._lapMsg.time) + (k._lapMsg.best ? '  BEST!' : ''), 0, 14);
-      ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 24px sans-serif';
-      ctx.fillText('のこり ' + k._lapMsg.lapsLeft + ' 周', 0, 46);
+      const remain = k._lapMsg.lapsLeft === 1 ? 'FINAL LAP!' : k._lapMsg.lapsLeft + ' LAPS TO GO';
+      ctx.fillStyle = k._lapMsg.lapsLeft === 1 ? '#ff7a4d' : '#ffe08a'; ctx.font = 'bold 24px sans-serif';
+      ctx.fillText(remain, 0, 46);
+      ctx.letterSpacing = '0px';
       ctx.restore();
     }
 
