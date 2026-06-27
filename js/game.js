@@ -133,6 +133,12 @@ class Track {
     });
     this.windR = this.tile * 2.2;                 // 風ゾーンの半径
     this.windForce = def.windForce || 130;        // 流される強さ(px/s)
+    // ワープ(瞬間移動)ゲート: entry に触れると exit へテレポート(新ギミック)。
+    this.warps = (def.warps || []).map((w) => {
+      const [ex, ey] = M([w.ex, w.ey]); const [tx, ty] = M([w.tx, w.ty]);
+      return { ex: ex * this.tile, ey: ey * this.tile, tx: tx * this.tile, ty: ty * this.tile };
+    });
+    this.warpR = this.tile * 1.3;
     this._buildScenery(def);
     // 大コースでもメモリを抑えるためベイク画像は縮小解像度(最長辺~3000px)
     this.bakeScale = Math.min(0.7, 3000 / Math.max(this.w, this.h));
@@ -285,6 +291,7 @@ class Track {
 
     this._bakeGaps(g);   // コース欠損(奈落)を走路の上に描く=道が途切れて見える
     this._bakeWinds(g);  // 突風ゾーン(流れる矢印)を描く
+    this._bakeWarps(g);  // ワープゲート(入口/出口のポータル)を描く
     this._bakeStart(g);
     for (const rc of this.recover) this._bakeRecover(g, rc);
     for (const b of this.boosts) this._bakeBoost(g, b);
@@ -383,6 +390,30 @@ class Track {
     g.fillStyle = 'rgba(150,170,230,0.45)';
     for (let i = 0; i < 6; i++) g.fillRect((-0.34 + 0.13 * i) * len, (-0.55 + 0.22 * (i % 4)) * halfW, tile * 0.3, tile * 0.13);
     g.restore();
+  }
+  // ワープゲート: 入口(マゼンタ寄り)と出口(シアン寄り)に渦巻くポータルを描く。
+  _bakeWarps(g) {
+    if (!this.warps || !this.warps.length) return;
+    const tile = this.tile, R = this.warpR;
+    const portal = (x, y, entry) => {
+      const RV = R * 1.7;                            // 見た目は判定より一回り大きく(遠くからでも分かる)
+      g.save(); g.translate(x, y);
+      const halo = g.createRadialGradient(0, 0, RV * 0.2, 0, 0, RV * 1.25);   // 外周グロー
+      halo.addColorStop(0, entry ? 'rgba(255,77,210,0.55)' : 'rgba(125,240,255,0.55)');
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = halo; g.beginPath(); g.arc(0, 0, RV * 1.25, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(8,3,22,0.88)'; g.beginPath(); g.arc(0, 0, RV * 0.95, 0, TAU); g.fill();  // 渦の暗い穴
+      for (let i = 0; i < 5; i++) {                  // 同心の明るいリング(太め)
+        g.beginPath(); g.arc(0, 0, RV * (0.92 - i * 0.17), 0, TAU);
+        g.lineWidth = tile * 0.2; g.globalAlpha = 1 - i * 0.13;
+        g.strokeStyle = (i % 2 === 0) === entry ? '#ff4dd2' : '#7df0ff';   // 入口=マゼンタ基調 / 出口=シアン基調
+        g.stroke();
+      }
+      g.globalAlpha = 1; g.fillStyle = '#ffffff';
+      g.beginPath(); g.arc(0, 0, RV * 0.16, 0, TAU); g.fill();            // 中心の白い光点
+      g.restore();
+    };
+    for (const w of this.warps) { portal(w.ex, w.ey, true); portal(w.tx, w.ty, false); }
   }
   // 突風(横風)ゾーン: 風向きへ流れる矢印の筋を描く(乗ると流される合図)。
   _bakeWinds(g) {
@@ -614,6 +645,19 @@ class Kart {
     if (surf === 'gap' && !this.gone && !this.finished && game.state === 'racing') {
       game.fallInGap(this);
       return;                                          // 以降の物理は中断(テレポート済み)
+    }
+    // ワープ(瞬間移動)ゲート: 先端が入口に触れたら出口へテレポート(新ギミック)。
+    this._warpCd = (this._warpCd || 0) - dt;
+    if (T.warps.length && this._warpCd <= 0 && this.airZ <= 0 && !this.gone && !this.finished && game.state === 'racing') {
+      const cw = Math.cos(this.angle), sw = Math.sin(this.angle);
+      const wnx = this.x + cw * this.bodyR, wny = this.y + sw * this.bodyR;
+      const wr = T.warpR * T.warpR;
+      for (const w of T.warps) {
+        if (dist2(wnx, wny, w.ex, w.ey) < wr || dist2(this.x, this.y, w.ex, w.ey) < wr) {
+          game.warpKart(this, w);
+          return;                                      // テレポート後はこのフレームの物理を中断
+        }
+      }
     }
 
     // ===== ギア / 変速(全モードで現ギアが頭打ち=ギアに意味を持たせる。
@@ -1130,6 +1174,27 @@ class Game {
       if (mode === 'incl') pool = pool.concat([0]);
     }
     return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // ワープ(瞬間移動): entry→exit へテレポート。出口の本線方向を向き、速度は維持。
+  //   周回判定を壊さないよう _lastSeg / _passedHalf / _prog を整える。
+  warpKart(k, w) {
+    const T = this.track, N = T.path.length;
+    for (let p = 0; p < 12; p++) this.spawnParticle(w.ex, w.ey, p % 2 ? '#ff7df0' : '#7df0ff', 'star');  // 入口の演出
+    const np = T.nearestOnPath(w.tx, w.ty);
+    k.x = w.tx; k.y = w.ty; k.angle = np.angle;
+    k.kbx = 0; k.kby = 0; k.airZ = 0; k.airVz = 0;
+    k.speed = Math.max(Math.abs(k.speed), 90);          // 出口で止まらないよう最低速を保証
+    k._warpCd = 1.0;                                     // 連続発動を防ぐクールダウン
+    const segB = np.seg, segA = (k._lastSeg != null) ? k._lastSeg : segB;
+    let d = segB - segA; if (d > N / 2) d -= N; if (d < -N / 2) d += N;
+    if (d > 0) k._prog += d;                             // 前進分を加算(ショートカット恩恵)
+    if (segB / N >= 0.4) k._passedHalf = true;           // 中間をまたいでも周回成立できるように
+    k._lastSeg = segB; k._lastX = k.x; k._lastY = k.y;
+    k._stuckTimer = 0; k._pinTimer = 0; k._progBest = k._prog;
+    k.invincTimer = Math.max(k.invincTimer, 0.7); k.rescueFlash = 1.0;
+    for (let p = 0; p < 22; p++) this.spawnParticle(k.x, k.y, p % 2 ? '#ff7df0' : '#7df0ff', 'star');     // 出口の演出
+    if (k.isHuman) audio.sfxRescue();
   }
 
   // 奈落に落ちた: 大ダメージ＋穴の手前(ジャンプ台より前)に戻して再挑戦させる。

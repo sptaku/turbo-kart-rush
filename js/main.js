@@ -155,7 +155,7 @@
         <div style="position:absolute; inset:18px; border-radius:10px;
           background:repeating-linear-gradient(45deg, ${th.road} 0 14px, ${th.roadDk} 14px 28px);
           box-shadow: inset 0 0 0 6px ${th.grass};"></div>
-        <div style="position:absolute; top:10px; left:12px; font-size:24px;">${['🌱', '☀️', '🏜️', '🌃', '🌋', '🌌', '🌈', '🌠', '🌩️'][idx] || '🏁'}</div>
+        <div style="position:absolute; top:10px; left:12px; font-size:24px;">${['🌱', '☀️', '🏜️', '🌃', '🌋', '🌌', '🌈', '🌠', '🌩️', '🌀'][idx] || '🏁'}</div>
       </div>
       <div class="meta">
         <div class="nm">${t.name}</div>
@@ -208,7 +208,7 @@
 
   function startGP() {
     mode = 'gp'; players = 1;
-    gp = { seq: [0, 1, 2, 3, 4, 5, 6, 7, 8], idx: 0, points: {}, info: {}, allFirst: true, retired: [] };   // 超かんたん〜超超超超激ムズ全9コース連戦
+    gp = { seq: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], idx: 0, points: {}, info: {}, allFirst: true, retired: [] };   // 超かんたん〜超超超超超激ムズ全10コース連戦
     saveGP(0);                       // 中断・再開用に保存(続きから = 第1戦)
     beginRace(gp.seq[0]);
   }
@@ -404,7 +404,7 @@
     gpPlus.disabled = gpCpu >= 19;
     const cpus = gpCpu * chaosMul();
     document.getElementById('gp-summary').innerHTML =
-      `あなた <b>1人</b>＋CPU <b>${cpus}台</b>${chaosTag()} ＝ 合計 <b>${1 + cpus}台</b>で全9コース連戦`;
+      `あなた <b>1人</b>＋CPU <b>${cpus}台</b>${chaosTag()} ＝ 合計 <b>${1 + cpus}台</b>で全10コース連戦`;
   }
   gpMinus.addEventListener('click', () => { gpCpu--; refreshGP(); });
   gpPlus.addEventListener('click', () => { gpCpu++; refreshGP(); });

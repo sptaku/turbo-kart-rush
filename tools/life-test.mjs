@@ -144,4 +144,15 @@ gW._readHuman = (kk) => { kk.control = { throttle: 1, steer: 0, drift: false, it
 const wx0 = kW.x; for (let i = 0; i < 60; i++) gW.update(1 / 60);
 t('突風ゾーンで横へ流される(無操作)', (kW.x - wx0) > tileW * 0.5);
 
+// --- ワープゲート: 入口に触れると出口へ瞬間移動(warp コース) ---
+const gWp = new Game(mc); gWp.onFinish = () => {};
+gWp.startRace({ mode: 'time', trackIndex: 9, players: 1, numKarts: 1, lifeOn: false });
+gWp.state = 'racing'; gWp.countdown = 0;
+const kWp = gWp.humans[0], tileWp = gWp.track.tile, w0 = gWp.track.warps[0];
+kWp.x = 92 * tileWp; kWp.y = 100 * tileWp; kWp.angle = Math.atan2(98 - 100, 88 - 92); kWp.speed = 200;
+gWp._readHuman = (kk) => { kk.control = { throttle: 1, steer: 0, drift: false, item: false }; };
+let warped = false;
+for (let i = 0; i < 60; i++) { const px = kWp.x, py = kWp.y; gWp.update(1 / 60); if (Math.hypot(kWp.x - px, kWp.y - py) > 30 * tileWp) { warped = true; break; } }
+t('ワープゲートで出口へ瞬間移動', warped && Math.hypot(kWp.x - w0.tx, kWp.y - w0.ty) < 6 * tileWp);
+
 console.log(fail ? `=== ${fail}件NG ===` : '=== ライフシステム すべてOK ==='); if (fail) Deno.exit(1);
