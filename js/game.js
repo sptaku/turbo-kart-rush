@@ -139,6 +139,17 @@ class Track {
       return { ex: ex * this.tile, ey: ey * this.tile, tx: tx * this.tile, ty: ty * this.tile };
     });
     this.warpR = this.tile * 1.3;
+    // 「島」方式: islands=描画する走路の区間(waypoint範囲)。区間の間の本線はvoid(空白=ワープ必須)。
+    this.islands = def.islands || null;
+    this.voidRanges = [];   // void になるセグメントindexの範囲
+    if (this.islands) {
+      const ps = this.pathSeg, N = this.path.length;
+      for (let k = 0; k < this.islands.length; k++) {
+        const endPt = this.islands[k][1] * ps;
+        const nextStartPt = this.islands[(k + 1) % this.islands.length][0] * ps;
+        this.voidRanges.push({ a: endPt % N, b: ((nextStartPt - 1) % N + N) % N });
+      }
+    }
     // ミニマップが切れないよう、分岐路/ワープ点も表示範囲(bounds)に含める
     const mg2 = this.tile * 2;
     const expand = (x, y) => {
@@ -156,6 +167,7 @@ class Track {
   // 沿道の装飾(リッチ表示でのみ描画)。走路の外側(レールの先)に並べる。
   _buildScenery(def) {
     this.scenery = [];
+    if (this.islands) return;   // 島方式(宇宙に点在)は沿道装飾なし(空白に木が並ばないように)
     const kinds = SCENERY_BY_TRACK[def.id] || ['tree'];
     const P = this.path, n = P.length, tile = this.tile;
     const place = (a, px, py, side, near) => {
@@ -235,10 +247,21 @@ class Track {
     for (const b of this.boosts) if ((x - b.x) ** 2 + (y - b.y) ** 2 < this.boostR * this.boostR) return 'boost';
     for (const h of this.hazards) if ((x - h.x) ** 2 + (y - h.y) ** 2 < this.hazardR * this.hazardR) return 'hazard';
     for (const gp of this.gaps) if ((x - gp.x) ** 2 + (y - gp.y) ** 2 < this.gapR * this.gapR) return 'gap';
-    const d = this._corridorDist(x, y);
+    const di = this._distInfo(x, y);
+    let d = di.d, onBranch = false;
+    if (this.branchPaths) for (const bp of this.branchPaths) { const bd = this._distToPoly(x, y, bp); if (bd < d) { d = bd; onBranch = true; } }
+    // 本線のこの区間が「空白(void)」なら落下(=ワープでしか越えられない)。分岐路上は除く。
+    if (!onBranch && this.voidRanges.length && di.d <= this.wallDist && this._inVoid(di.i)) return 'gap';
     if (d <= this.roadHalf) return 'road';
     if (d <= this.wallDist) return 'grass';
     return 'wall';
+  }
+  _inVoid(i) {
+    for (const r of this.voidRanges) {
+      if (r.a <= r.b) { if (i >= r.a && i <= r.b) return true; }
+      else if (i >= r.a || i <= r.b) return true;   // ループ境界をまたぐ範囲
+    }
+    return false;
   }
   isWallPt(x, y) {
     if (x < 0 || y < 0 || x > this.w || y > this.h) return true;
@@ -290,11 +313,18 @@ class Track {
       [(this.roadHalf + tile * 0.16) * 2, th.curb1],         // 縁石(走路フチ)
       [this.roadHalf * 2, th.road],                          // 走路
     ];
+    // islands があれば島の区間だけ走路を描く(間は空白=描かない)。無ければ従来どおり全周。
+    const runs = this.islands ? this.islands.map(([a, b]) => [a * this.pathSeg, b * this.pathSeg]) : null;
+    const strokeRanges = (w, c, dash) => {
+      if (runs) {
+        for (const [s, e] of runs) { const pts = []; for (let i = s; i <= e; i++) pts.push(P[i % P.length]); strokeOf(pts, w, c, dash, false); }
+      } else strokeOf(P, w, c, dash, true);
+    };
     for (const [w, c] of layers) {
-      strokeOf(P, w, c, null, true);
+      strokeRanges(w, c, null);
       for (const bp of branches) strokeOf(bp, w, c, null, false);
     }
-    strokeOf(P, tile * 0.09, th.line, [tile * 0.55, tile * 0.55], true);   // センターライン(破線)
+    strokeRanges(tile * 0.09, th.line, [tile * 0.55, tile * 0.55]);   // センターライン(破線)
     for (const bp of branches) strokeOf(bp, tile * 0.09, th.line, [tile * 0.55, tile * 0.55], false);
 
     this._bakeGaps(g);   // コース欠損(奈落)を走路の上に描く=道が途切れて見える
@@ -649,12 +679,7 @@ class Kart {
       }
     }
     if (this.airZ > 0) surf = 'air';                  // 空中は芝生/ハザード/奈落の影響を受けずすり抜け
-    // 接地状態でコース欠損(奈落)に来た = 落下。手前に戻して大ダメージ。
-    if (surf === 'gap' && !this.gone && !this.finished && game.state === 'racing') {
-      game.fallInGap(this);
-      return;                                          // 以降の物理は中断(テレポート済み)
-    }
-    // ワープ(瞬間移動)ゲート: 先端が入口に触れたら出口へテレポート(新ギミック)。
+    // ワープ(瞬間移動)ゲート: 先端が入口に触れたら出口へテレポート。奈落判定より先に処理。
     this._warpCd = (this._warpCd || 0) - dt;
     if (T.warps.length && this._warpCd <= 0 && this.airZ <= 0 && !this.gone && !this.finished && game.state === 'racing') {
       const cw = Math.cos(this.angle), sw = Math.sin(this.angle);
@@ -666,6 +691,11 @@ class Kart {
           return;                                      // テレポート後はこのフレームの物理を中断
         }
       }
+    }
+    // 接地状態でコース欠損(奈落/空白)に来た = 落下。手前に戻して大ダメージ。
+    if (surf === 'gap' && !this.gone && !this.finished && game.state === 'racing') {
+      game.fallInGap(this);
+      return;                                          // 以降の物理は中断(テレポート済み)
     }
 
     // ===== ギア / 変速(全モードで現ギアが頭打ち=ギアに意味を持たせる。
@@ -853,8 +883,16 @@ class Kart {
     const near = T._distInfo(this.x, this.y).i;
     // 速いほど先を読む(短め=中心線を密に追従してコーナーで膨らみにくい)
     const look = 3 + Math.round(clamp(sp / 150, 0, 1) * 4);
-    const aim = P[(near + look) % n];
-    const aim2 = P[(near + look + 4) % n];
+    let aimIdx = (near + look) % n, gateAim = false;
+    // 先読み点が「空白(void)」に入る=ワープ手前 → 島の終端(ゲート)を狙う(空白へ逸れない)
+    if (T.voidRanges && T.voidRanges.length && T._inVoid(aimIdx)) {
+      for (const r of T.voidRanges) {
+        const inR = r.a <= r.b ? (aimIdx >= r.a && aimIdx <= r.b) : (aimIdx >= r.a || aimIdx <= r.b);
+        if (inR) { aimIdx = r.a; gateAim = true; break; }
+      }
+    }
+    const aim = P[aimIdx];
+    const aim2 = gateAim ? aim : P[(aimIdx + 4) % n];
     const desired = Math.atan2(aim.y - this.y, aim.x - this.x);
     const diff = angNorm(desired - this.angle);
     // 先のカーブのきつさ(局所的に)
@@ -1197,6 +1235,8 @@ class Game {
     const segB = np.seg, segA = (k._lastSeg != null) ? k._lastSeg : segB;
     let d = segB - segA; if (d > N / 2) d -= N; if (d < -N / 2) d += N;
     if (d > 0) k._prog += d;                             // 前進分を加算(ショートカット恩恵)
+    // ワープで前方へスタートラインを跨いだら周回成立(島コースは最後の周回がワープ越え)
+    if (segA > N * 0.7 && segB < N * 0.3 && k._passedHalf && !k.finished) { k._passedHalf = false; this._completeLap(k); }
     if (segB / N >= 0.4) k._passedHalf = true;           // 中間をまたいでも周回成立できるように
     k._lastSeg = segB; k._lastX = k.x; k._lastY = k.y;
     k._stuckTimer = 0; k._pinTimer = 0; k._progBest = k._prog;
@@ -2572,9 +2612,17 @@ class Game {
     // コース
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';
     ctx.lineWidth = Math.max(3, mw * 0.07); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(sx(T.path[0].x), sy(T.path[0].y));
-    for (let i = 1; i < T.path.length; i++) ctx.lineTo(sx(T.path[i].x), sy(T.path[i].y));
-    ctx.closePath(); ctx.stroke();
+    if (T.islands) {                              // 島方式: 島の区間だけ描く(間は空白)
+      for (const [a, b] of T.islands) {
+        ctx.beginPath(); ctx.moveTo(sx(T.path[a * T.pathSeg].x), sy(T.path[a * T.pathSeg].y));
+        for (let i = a * T.pathSeg + 1; i <= b * T.pathSeg; i++) ctx.lineTo(sx(T.path[i % T.path.length].x), sy(T.path[i % T.path.length].y));
+        ctx.stroke();
+      }
+    } else {
+      ctx.beginPath(); ctx.moveTo(sx(T.path[0].x), sy(T.path[0].y));
+      for (let i = 1; i < T.path.length; i++) ctx.lineTo(sx(T.path[i].x), sy(T.path[i].y));
+      ctx.closePath(); ctx.stroke();
+    }
     // 分岐路(あれば): 本線とは別色で「もう一つのルート」として描く
     if (T.branchPaths && T.branchPaths.length) {
       ctx.strokeStyle = T.theme.accent || '#ff5ec4';

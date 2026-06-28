@@ -155,16 +155,16 @@ let warped = false;
 for (let i = 0; i < 60; i++) { const px = kWp.x, py = kWp.y; gWp.update(1 / 60); if (Math.hypot(kWp.x - px, kWp.y - py) > 30 * tileWp) { warped = true; break; } }
 t('ワープゲートで出口へ瞬間移動', warped && Math.hypot(kWp.x - w0.tx, kWp.y - w0.ty) < 6 * tileWp);
 
-// --- ワープ・ネクサス(track10): 本線がワープ必須(空白=gap、ゲートで瞬間移動) ---
+// --- ワープ・ネクサス(track10): 浮島が点在しワープで横断。空白はワープ必須・AIが周回できる ---
 const gNx = new Game(mc); gNx.onFinish = () => {};
 gNx.startRace({ mode: 'time', trackIndex: 10, players: 1, numKarts: 1, lifeOn: false });
 gNx.state = 'racing'; gNx.countdown = 0;
-const Tn = gNx.track, tn = Tn.tile, kn = gNx.humans[0];
+const Tn = gNx.track;
 t('ネクサス: ワープ入口が多数', Tn.warps.length >= 20);
-t('ネクサス: ゲート先が空白(gap=ワープ必須)', Tn.surfaceAt(59 * tn, 131 * tn) === 'gap');
-kn.x = 48 * tn; kn.y = 131 * tn; kn.angle = 0; kn.speed = 260;
-gNx._readHuman = (kk) => { kk.control = { throttle: 1, steer: 0, drift: false, item: false }; };
-let nWarp = false; for (let i = 0; i < 60; i++) { const px = kn.x; gNx.update(1 / 60); if (kn.x - px > 4 * tn) { nWarp = true; break; } }
-t('ネクサス: ゲートでワープして空白を越える', nWarp && Tn.surfaceAt(kn.x, kn.y) !== 'gap');
+t('ネクサス: 空白(void)区間あり=ワープ必須', Tn.voidRanges.length >= 3);
+gNx._readHuman = (kk) => kk.computeAI(gNx);
+let nLap = false;
+for (let i = 0; i < 90 * 60; i++) { gNx.update(1 / 60); if (gNx.humans[0].lapCount >= 1) { nLap = true; break; } }
+t('ネクサス: AIがワープを使って周回できる', nLap);
 
 console.log(fail ? `=== ${fail}件NG ===` : '=== ライフシステム すべてOK ==='); if (fail) Deno.exit(1);

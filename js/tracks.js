@@ -198,40 +198,35 @@ const T9_BRANCH1 = [[112, 116], [98, 110], [88, 98]];
 // 分岐2: 上部シケインを内側で抜けるタイトな近道(wp9→wp12)。
 const T9_BRANCH2 = [[84, 34], [74, 46], [54, 44], [40, 38], [28, 28]];
 
-// ---- Track10: ワープ・ネクサス(超超超超超超激ムズ・本線がワープ必須) ---------
-//   本線が各所で「空白(奈落)」に分断され、全幅のワープゲートを通らないと先へ進めない。
-//   ワープ橋: (gx,gy) に全幅ゲート(横列)＋その先 voidLen タイルの空白＋出口を生成。
-const WOFF = [-3.2, -2.4, -1.6, -0.8, 0, 0.8, 1.6, 2.4, 3.2];   // 道幅いっぱいの横列
-function warpBridge(gx, gy, dx, dy, voidLen) {
-  const px = -dy, py = dx;                                       // 進行に直交(横方向)
-  const ex = _r1(gx + dx * (voidLen + 2)), ey = _r1(gy + dy * (voidLen + 2));   // 出口(空白の先)
-  const gate = [], voids = [];
-  for (const o of WOFF) {
-    gate.push({ ex: _r1(gx + px * o), ey: _r1(gy + py * o), tx: ex, ty: ey });  // 各入口→共通の出口
-    for (let d = 1; d <= voidLen; d++) voids.push([_r1(gx + dx * d + px * o), _r1(gy + dy * d + py * o)]);
+// ---- Track10: ワープ・ネクサス(超超超超超超激ムズ・島が点在しワープで大横断) ----
+//   走路は宇宙に浮かぶ5つの「島」だけ。島と島の間は空白(=ワープでしか渡れない)。
+//   ワープはマップを大きくクロスして「一気に飛ぶ」。島には急カーブも仕込む。
+const WOFF = [-3.2, -2.4, -1.6, -0.8, 0, 0.8, 1.6, 2.4, 3.2];   // ゲートの全幅横列
+// 各島=[x,y]の並び。走行順は A→C→E→B→D(=対角へ飛ぶ五芒星状)。
+const T10_ISL = [
+  [[134, 55], [145, 66], [131, 76], [142, 90]],  // A 右(S字・急カーブ)
+  [[48, 104], [34, 100], [42, 89], [27, 82]],    // C 左下(ジグザグ・急カーブ)
+  [[82, 21], [98, 23], [112, 28]],               // E 上(ゆるい)
+  [[114, 112], [101, 124], [86, 116]],           // B 右下(V字・急カーブ)
+  [[26, 52], [33, 41], [45, 36]],                // D 左(ゆるい弧)
+];
+const T10 = T10_ISL.flat();
+let _t10i = 0;
+const T10_ISLANDS = T10_ISL.map((a) => { const r = [_t10i, _t10i + a.length - 1]; _t10i += a.length; return r; });
+// ワープゲート: 各島の終端に全幅ゲート→次の島の先頭へ。
+const T10_WARPS = (() => {
+  const w = [];
+  for (let k = 0; k < T10_ISL.length; k++) {
+    const isl = T10_ISL[k], nx = T10_ISL[(k + 1) % T10_ISL.length];
+    const last = isl[isl.length - 1], prev = isl[isl.length - 2];
+    let dx = last[0] - prev[0], dy = last[1] - prev[1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const px = -dy, py = dx;
+    // 出口は次の島の「2点目」=島の内側(空白チョードの端ではなく、確実に走路の上)へ
+    const ex2 = _r1((nx[0][0] + nx[1][0]) / 2), ey2 = _r1((nx[0][1] + nx[1][1]) / 2);
+    for (const o of WOFF) w.push({ ex: _r1(last[0] + px * o), ey: _r1(last[1] + py * o), tx: ex2, ty: ey2 });
   }
-  return { gate, voids };
-}
-// 複雑に巻いた周回(各直線にワープ橋)。ワープを通らないと空白に落ちて進めない。
-const T10 = [
-  [38, 130], [72, 132], [104, 130],     // 0-2 下ストレート(ワープ2か所)
-  [130, 122], [144, 102],               // 3-4 右下カーブ
-  [144, 78], [142, 56],                 // 5-6 右ストレート(ワープ)
-  [126, 38], [102, 32],                 // 7-8 右上カーブ
-  [86, 40], [74, 62], [54, 62], [42, 40],  // 9-12 中央へ潜る舌状の入り組み(ワープ)
-  [30, 34], [20, 56],                   // 13-14 左上カーブ
-  [22, 82], [24, 106],                  // 15-16 左ストレート(ワープ)
-  [30, 124],                            // 17 左下カーブ→スタート
-];
-const T10_BRIDGES = [
-  warpBridge(56, 131, 1, 0, 6),    // 下ストレート前半 →
-  warpBridge(90, 130, 1, 0, 6),    // 下ストレート後半 →
-  warpBridge(144, 88, 0, -1, 6),   // 右ストレート ↑
-  warpBridge(68, 62, -1, 0, 6),    // 中央の舌 ←
-  warpBridge(21, 92, 0, 1, 6),     // 左ストレート ↓
-];
-const T10_WARPS = T10_BRIDGES.flatMap((b) => b.gate);
-const T10_GAPS = T10_BRIDGES.flatMap((b) => b.voids);
+  return w;
+})();
 
 const TRACKS = [
   {
@@ -532,8 +527,8 @@ const TRACKS = [
     difficulty: '超超超超超超激ムズ',
     laps: 3,
     tile: 80,
-    cols: 158, rows: 140,
-    roadHalf: 2.5, shoulder: 0.7,                // 最狭。本線が空白で分断＝ワープ必須
+    cols: 152, rows: 138,
+    roadHalf: 3.0, shoulder: 0.8,                // 浮島は少し広め(短い島＋急カーブを走れるように)
     music: 'race3',
     hazardType: 'ice',
     theme: {
@@ -546,12 +541,12 @@ const TRACKS = [
       accent: '#5effd6',
     },
     waypoints: T10,
-    warps: T10_WARPS,                            // ★多数のワープ(全幅ゲート×5)
-    gaps: T10_GAPS,                              // ★各ゲートの先の空白(=ワープ必須)
-    items: itemRow(T10, [1, 4, 9, 15], [-0.7, 0, 0.7]),
-    boosts: pick(T10, [3, 13]),
-    hazards: pick(T10, [7, 11, 16]),             // 各コーナーに氷
-    recover: pick(T10, [5, 14]),                 // ライフ回復ピット
+    islands: T10_ISLANDS,                        // ★走路は5つの浮島だけ(間は空白)
+    warps: T10_WARPS,                            // ★ワープで対角へ大横断(全幅ゲート×5)
+    items: itemRow(T10, [1, 5, 9, 12], [-0.7, 0, 0.7]),
+    boosts: pick(T10, [8, 15]),
+    hazards: pick(T10, [2, 6, 12]),              // 急カーブ島に氷
+    recover: pick(T10, [1, 11]),                 // ライフ回復ピット
   },
 ];
 
