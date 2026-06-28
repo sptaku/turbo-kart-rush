@@ -45,11 +45,11 @@
   // ---- 状態 --------------------------------------------------------------
   let mode = 'vs';       // 'gp' | 'time' | 'vs'
   let players = 1;       // 1〜4人(VSを8回遊ぶと1〜8人に解放)
-  let cpuCount = 3;      // VSのCPU台数 0〜5
+  let cpuCount = 3;      // VSのCPU台数 0〜20
   let vsPlays = 0;       // VSモードを遊んだ回数(8回で1〜8人を解放)
   try { vsPlays = parseInt(localStorage.getItem('vs_plays') || '0', 10) || 0; } catch (e) {}
   let vs8Unlocked = vsPlays >= 8;
-  let gpCpu = 9;         // グランプリのCPU台数 1〜19(デフォルト9)
+  let gpCpu = 9;         // グランプリのCPU台数 1〜25(デフォルト9)
   let transModes = ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto']; // プレイヤー(最大8)ごとの変速
   const SPEED_OPTS = [1, 1.5, 2, 2.5, 3];   // 最高速倍率
   let speedIdx = 0;                          // SPEED_OPTS のインデックス
@@ -116,8 +116,8 @@
   let gp = null;         // { seq, idx, points:{id:pts}, info:{id:{name,body,isHuman}} }
   let pendingRematch = null, pendingNext = null;
 
-  // place(1..) → 得点。最大20台に対応(以降は0点)
-  const POINTS = [0, 25, 20, 17, 15, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1, 1, 1, 1];
+  // place(1..) → 得点。26台(GP最大25+自分)まで対応。下位は1点、それ以降は0点。
+  const POINTS = [0, 25, 20, 17, 15, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
   // ---- 画面切り替え ------------------------------------------------------
   const screens = {
@@ -176,7 +176,7 @@
   const chaosTag = () => CHAOS_TAG[chaosLevel] || '';
   function totalKarts() {
     if (mode === 'time') return 1;                   // タイムアタックはCPU無し
-    if (mode === 'gp') return 1 + gpCpu * chaosMul();          // 1人 + CPU(1〜19)×倍率
+    if (mode === 'gp') return 1 + gpCpu * chaosMul();          // 1人 + CPU(1〜25)×倍率
     return players + Math.max(minCpu(), cpuCount) * chaosMul(); // vs
   }
 
@@ -393,15 +393,15 @@
     });
   });
 
-  // ---- グランプリ設定(CPU台数 1〜19) ------------------------------------
+  // ---- グランプリ設定(CPU台数 1〜25) ------------------------------------
   const gpVal = document.getElementById('gp-cpu-val');
   const gpMinus = document.getElementById('gp-cpu-minus');
   const gpPlus = document.getElementById('gp-cpu-plus');
   function refreshGP() {
-    gpCpu = Math.max(1, Math.min(19, gpCpu));
+    gpCpu = Math.max(1, Math.min(25, gpCpu));
     gpVal.textContent = gpCpu;
     gpMinus.disabled = gpCpu <= 1;
-    gpPlus.disabled = gpCpu >= 19;
+    gpPlus.disabled = gpCpu >= 25;
     const cpus = gpCpu * chaosMul();
     document.getElementById('gp-summary').innerHTML =
       `あなた <b>1人</b>＋CPU <b>${cpus}台</b>${chaosTag()} ＝ 合計 <b>${1 + cpus}台</b>で全11コース連戦`;
@@ -412,7 +412,10 @@
 
   // ---- VS 設定(人数・CPU台数・各自の変速) ------------------------------
   const segP = document.getElementById('vs-players');
-  const segC = document.getElementById('vs-cpu');
+  const vsCpuVal = document.getElementById('vs-cpu-val');
+  const vsCpuMinus = document.getElementById('vs-cpu-minus');
+  const vsCpuPlus = document.getElementById('vs-cpu-plus');
+  const VS_CPU_MAX = 20;
   const segT = document.getElementById('vs-trans');
   const vsSummary = document.getElementById('vs-summary');
   const TRANS_CYCLE = ['auto', 'semi', 'manual'];
@@ -420,16 +423,13 @@
   function revealVs8() { segP.querySelectorAll('.vs8-only').forEach((b) => { b.hidden = false; }); }
   if (vs8Unlocked) revealVs8();   // 起動時に解放済みなら5〜8人ボタンを表示
   function refreshVS() {
-    // 人間1人ならCPU最低1。0ボタンは無効化し、0なら1へ。
+    // 人間1人ならCPU最低1。ステッパー(0〜20)で増減。
     const cmin = minCpu();
-    if (cpuCount < cmin) cpuCount = cmin;
+    cpuCount = Math.max(cmin, Math.min(VS_CPU_MAX, cpuCount));
     segP.querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.v === players));
-    segC.querySelectorAll('button').forEach((b) => {
-      const v = +b.dataset.v;
-      b.disabled = v < cmin;
-      b.style.opacity = v < cmin ? '0.3' : '';
-      b.classList.toggle('on', v === cpuCount);
-    });
+    vsCpuVal.textContent = cpuCount;
+    vsCpuMinus.disabled = cpuCount <= cmin;
+    vsCpuPlus.disabled = cpuCount >= VS_CPU_MAX;
     // 各プレイヤーの変速ボタン(タップで AT→セミAT→MT 循環)
     segT.innerHTML = '';
     for (let i = 0; i < players; i++) {
@@ -449,10 +449,8 @@
     const b = e.target.closest('button'); if (!b) return;
     players = +b.dataset.v; refreshVS();
   });
-  segC.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b || b.disabled) return;
-    cpuCount = +b.dataset.v; refreshVS();
-  });
+  vsCpuMinus.addEventListener('click', () => { cpuCount--; refreshVS(); });
+  vsCpuPlus.addEventListener('click', () => { cpuCount++; refreshVS(); });
   segT.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     const i = +b.dataset.p;

@@ -27,9 +27,9 @@
       <p class="tag">ターボ・カート・ラッシュ</p>
       <div class="btn-col">
         <button class="big" id="gp-resume" hidden>▶ グランプリの続きから</button>
-        <button class="big" data-mode="gp">🏆 グランプリ（CPU 1〜19台・全11コース連戦／多重ワープ・突風・分岐・超超超超超超激ムズ含む）</button>
+        <button class="big" data-mode="gp">🏆 グランプリ（CPU 1〜25台・全11コース連戦／多重ワープ・突風・分岐・超超超超超超激ムズ含む）</button>
         <button class="big" data-mode="time">⏱ タイムアタック（1人・タイム勝負）</button>
-        <button class="big" data-mode="vs">🆚 VS（1〜4人＋CPU 0〜5台・人数を選べる）</button>
+        <button class="big" data-mode="vs">🆚 VS（1〜8人＋CPU 0〜20台・人数を選べる）</button>
         <button class="ghost" id="to-help">あそびかた / そうさ</button>
         <button class="ghost" id="cpu-toggle">🤖 CPUの強さ: 普通</button>
         <button class="ghost" id="chaos-toggle">🌀 カオスモード: OFF</button>
@@ -55,7 +55,7 @@
       <h2>グランプリ設定</h2>
       <p class="tag">全11コース連戦・ポイント制</p>
       <div class="vs-row">
-        <span class="vs-label">CPUの数（1〜19）</span>
+        <span class="vs-label">CPUの数（1〜25）</span>
         <div class="stepper">
           <button id="gp-cpu-minus">−</button>
           <span id="gp-cpu-val">9</span>
@@ -82,10 +82,11 @@
         </div>
       </div>
       <div class="vs-row">
-        <span class="vs-label">CPUの数</span>
-        <div class="seg" id="vs-cpu">
-          <button data-v="0">0</button><button data-v="1">1</button><button data-v="2">2</button>
-          <button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button>
+        <span class="vs-label">CPUの数（0〜20）</span>
+        <div class="stepper" id="vs-cpu">
+          <button id="vs-cpu-minus">−</button>
+          <span id="vs-cpu-val">3</span>
+          <button id="vs-cpu-plus">＋</button>
         </div>
       </div>
       <div class="vs-row">
@@ -160,7 +161,7 @@
           </ul>
         </div>
       </div>
-      <p class="hint">VS は <b>1〜4人＋CPU 0〜5台</b>。3〜4人は画面を2×2分割。3人時は右下に順位表が出ます。各プレイヤーはキーボードでも<b>コントローラ</b>でも操作できます。</p>
+      <p class="hint">VS は <b>1〜8人＋CPU 0〜20台</b>。3〜4人は画面を2×2分割。3人時は右下に順位表が出ます。各プレイヤーはキーボードでも<b>コントローラ</b>でも操作できます。</p>
       <div class="item-legend">
         <h3>ミッション（変速）</h3>
         <p>タイトルの <b>⚙ ミッション</b> で AT（全自動）→ セミAT（自動＋手動シフト可）→ MT（完全手動）を切替。MT/セミAT では上のシフトキーでギア（N/R/1〜5）を操作します。</p>
