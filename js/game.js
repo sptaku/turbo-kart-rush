@@ -77,7 +77,7 @@ const RACERS = [
 const ITEMS = ['banana', 'green', 'red', 'mushroom', 'star', 'bomb', 'grapple'];
 const ITEM_LABEL = {
   banana: 'バナナ', green: 'グリーンボール', red: 'レッドボール',
-  mushroom: 'キノコ', star: 'スター', bomb: 'ボムへい', grapple: 'グラップル',
+  mushroom: 'キノコ', mushroom3: '3つキノコ', star: 'スター', bomb: 'ボムへい', grapple: 'グラップル',
 };
 
 // ============================ Track =======================================
@@ -554,6 +554,7 @@ class Kart {
     this.driftCharge = 0;
 
     this.item = null;
+    this.itemCount = 0;     // 複数回使えるアイテム(3つキノコ)の残り回数
     this.itemFlash = 0;
     this.dropImmune = 0;    // 自分が置いたバナナへの一時無敵
 
@@ -1040,6 +1041,10 @@ class Game {
       for (const k of this.karts) if (!k.isHuman && set.has(k.id)) k._retired = true;
     }
     if (this.noItems) this.track.itemBoxes = [];   // アイテムボックスを消す
+    // 開始時アイテム(タイムアタックで「3つキノコ」を最初から持つ等)。プレイヤーに付与。
+    if (opts.startItem) {
+      for (const k of this.humans) { k.item = opts.startItem; k.itemCount = (opts.startItem === 'mushroom3') ? 3 : 1; }
+    }
 
     audio.resume();
     audio.playMusic(this.def.music);
@@ -1343,16 +1348,24 @@ class Game {
     const place = k.place;
     let pool;
     if (place === 1) pool = ['banana', 'banana', 'green', 'green', 'mushroom', 'red'];
-    else if (place === 2) pool = ['green', 'red', 'mushroom', 'mushroom', 'banana', 'grapple', 'bomb'];
-    else pool = ['mushroom', 'red', 'star', 'grapple', 'grapple', 'bomb', 'star'];
+    else if (place === 2) pool = ['green', 'red', 'mushroom', 'mushroom', 'banana', 'grapple', 'bomb', 'mushroom3'];
+    else pool = ['mushroom', 'red', 'star', 'grapple', 'grapple', 'bomb', 'star', 'mushroom3'];
     k.item = pool[Math.floor(Math.random() * pool.length)];
+    k.itemCount = (k.item === 'mushroom3') ? 3 : 1;     // 3つキノコは3回使える
     k.itemFlash = 0.6;
     audio.sfxPickup();
   }
 
   useItem(k) {
     const type = k.item; if (!type) return;
-    k.item = null;
+    // 3つキノコ: キノコ効果を出して残り回数を1減らす(0で使い切り)
+    if (type === 'mushroom3') {
+      k.boostTimer = Math.max(k.boostTimer, 1.4); audio.sfxBoost();
+      k.itemCount = (k.itemCount || 1) - 1;
+      if (k.itemCount <= 0) { k.item = null; k.itemCount = 0; }
+      return;
+    }
+    k.item = null; k.itemCount = 0;
     const fx = Math.cos(k.angle), fy = Math.sin(k.angle);
     // 投擲物は自機の少し前方(画面に映る位置)から発射。発射光も出す。
     const ahead = k.radius + 150;
@@ -2500,8 +2513,9 @@ class Game {
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     }
 
-    // 持ちアイテム表示(各画面の上中央に大きく。取得直後は光る)。タイムアタックは非表示
-    if (!timeMode) {
+    // 持ちアイテム表示(各画面の上中央に大きく。取得直後は光る)。
+    // タイムアタックは通常非表示だが、アイテムを持っている時(3つキノコ等)は表示する。
+    if (!timeMode || k.item) {
       const bs = 70, cx = vp.x + vp.w / 2, ixc = cx - bs / 2, iyc = vp.y + 22;
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'alphabetic';
@@ -2520,6 +2534,13 @@ class Game {
         this._drawItemIcon(ctx, k.item, cx, iyc + bs / 2 - 7);
         ctx.fillStyle = '#ffe680'; ctx.font = 'bold 12px sans-serif'; ctx.textBaseline = 'middle';
         ctx.fillText(ITEM_LABEL[k.item] || '', cx, iyc + bs - 13);
+        if (k.itemCount > 1) {                         // 残り回数バッジ(3つキノコ)
+          const bx = ixc + bs - 9, by = iyc + 9;
+          ctx.fillStyle = '#e8412e'; ctx.beginPath(); ctx.arc(bx, by, 12, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.textBaseline = 'middle';
+          ctx.fillText('×' + k.itemCount, bx, by + 1);
+        }
       } else {
         ctx.fillStyle = 'rgba(255,255,255,0.22)'; this._drawSpark(ctx, cx, iyc + bs / 2, bs * 0.22); ctx.fill();
       }
@@ -2663,6 +2684,7 @@ class Game {
   _drawItemIcon(ctx, type, cx, cy) {
     ctx.save(); ctx.translate(cx, cy);
     switch (type) {
+      case 'mushroom3':   // 3つキノコもキノコの絵(残り回数はHUDのバッジで表示)
       case 'mushroom':
         ctx.fillStyle = '#e8412e'; ctx.beginPath(); ctx.arc(0, -2, 15, Math.PI, 0); ctx.fill();
         ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, -6, 3, 0, TAU); ctx.arc(6, -4, 3, 0, TAU); ctx.fill();

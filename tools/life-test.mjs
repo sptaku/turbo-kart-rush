@@ -167,4 +167,15 @@ let nLap = false;
 for (let i = 0; i < 90 * 60; i++) { gNx.update(1 / 60); if (gNx.humans[0].lapCount >= 1) { nLap = true; break; } }
 t('ネクサス: AIがワープを使って周回できる', nLap);
 
+// --- 3つキノコ: タイムアタックで最初から所持し、3回キノコとして使える ---
+const gM = new Game(mc); gM.onFinish = () => {};
+gM.startRace({ mode: 'time', trackIndex: 0, players: 1, numKarts: 1, lifeOn: false, startItem: 'mushroom3' });
+gM.state = 'racing'; gM.countdown = 0;
+const km = gM.humans[0];
+t('TA開始時に3つキノコを所持', km.item === 'mushroom3' && km.itemCount === 3);
+km.boostTimer = 0; gM.useItem(km);
+t('3つキノコ1回目: ブースト＋残り2', km.boostTimer > 0 && km.item === 'mushroom3' && km.itemCount === 2);
+gM.useItem(km); gM.useItem(km);
+t('3回使い切ると消える', km.item === null && km.itemCount === 0);
+
 console.log(fail ? `=== ${fail}件NG ===` : '=== ライフシステム すべてOK ==='); if (fail) Deno.exit(1);

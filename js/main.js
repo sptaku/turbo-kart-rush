@@ -55,6 +55,8 @@
   let speedIdx = 0;                          // SPEED_OPTS のインデックス
   let accuratePhysics = false;               // 高精度物理(分割積分)
   let offcourseDamage = true;                // コース外(芝生)でダメージを受けるか
+  let taTriple = true;                       // タイムアタックで「3つキノコ」を最初から持つ(既定ON)
+  try { const v = localStorage.getItem('ta_triple'); if (v != null) taTriple = (v === '1'); } catch (e) {}
   let musicStyle = 'chip'; // 'chip'(ピコピコ) | 'orchestra'(オーケストラ)
   let richGfx = true;     // リッチ(沿道装飾・空) / シンプル
   let aiDiff = 'normal';  // CPUの強さ: weak | normal | strong | super
@@ -201,7 +203,8 @@
       cpuDamageScale: DMG_CPU[dmgIdxC].random ? 1 : DMG_CPU[dmgIdxC].scale,
       cpuDamageRandom: DMG_CPU[dmgIdxC].random || null,
       cpuDamagePool: DMG_CPU[dmgIdxC].random ? buildCpuPool(DMG_CPU[dmgIdxC].random) : null,
-      speedMul: SPEED_OPTS[speedIdx], accuratePhysics, offcourseDamage };
+      speedMul: SPEED_OPTS[speedIdx], accuratePhysics, offcourseDamage,
+      startItem: (mode === 'time' && taTriple) ? 'mushroom3' : null };   // TAは最初から3つキノコ(設定)
     if (mode === 'gp' && gp) opts.gpRace = { index: gp.idx + 1, total: gp.seq.length };
     game.startRace(opts);
   }
@@ -581,6 +584,16 @@
   function updateOffUI() { offBtn.textContent = '🌱 コース外ダメージ: ' + (offcourseDamage ? 'あり' : 'なし'); }
   offBtn.addEventListener('click', () => { offcourseDamage = !offcourseDamage; updateOffUI(); });
   updateOffUI();
+
+  // 🍄 タイムアタックで「3つキノコ」を最初から持つか(既定ON・設定は保存)
+  const taBtn = document.getElementById('tatriple-toggle');
+  function updateTaUI() { taBtn.textContent = '🍄 タイムアタックで3つキノコ所持: ' + (taTriple ? 'ON' : 'OFF'); taBtn.classList.toggle('on', taTriple); }
+  taBtn.addEventListener('click', () => {
+    taTriple = !taTriple;
+    try { localStorage.setItem('ta_triple', taTriple ? '1' : '0'); } catch (e) {}
+    updateTaUI();
+  });
+  updateTaUI();
 
   // 音楽スタイル切替(ピコピコ ⇄ オーケストラ)。再生中でも即反映。
   const musicBtn = document.getElementById('music-toggle');
