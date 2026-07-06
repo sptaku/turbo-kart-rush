@@ -178,4 +178,15 @@ t('3つキノコ1回目: ブースト＋残り2', km.boostTimer > 0 && km.item =
 gM.useItem(km); gM.useItem(km);
 t('3回使い切ると消える', km.item === null && km.itemCount === 0);
 
+// --- リオ・カーニバル(track11): 動く障害物(サッカーボール)に当たるとスピン ---
+const gR2 = new Game(mc); gR2.onFinish = () => {};
+gR2.startRace({ mode: 'time', trackIndex: 11, players: 1, numKarts: 1, lifeOn: false });
+gR2.state = 'racing'; gR2.countdown = 0;
+const T2 = gR2.track, mv = T2.movers[0], kr = gR2.humans[0];
+t('動く障害物が複数ある', T2.movers.length >= 4);
+kr.x = mv.bx; kr.y = mv.by; kr.speed = 0; kr.spinTimer = 0; kr.invincTimer = 0;
+gR2._readHuman = (kk) => { kk.control = { throttle: 0, steer: 0, drift: false, item: false }; };
+let spun = false; for (let i = 0; i < 240; i++) { gR2.update(1 / 60); if (kr.spinTimer > 0) { spun = true; break; } }
+t('動くボールに当たるとスピンする', spun);
+
 console.log(fail ? `=== ${fail}件NG ===` : '=== ライフシステム すべてOK ==='); if (fail) Deno.exit(1);

@@ -228,6 +228,26 @@ const T10_WARPS = (() => {
   return w;
 })();
 
+// ---- Track11: リオ・カーニバル(超超超超超超超激ムズ・ブラジル/動く障害物) ----------
+//   トロピカルなブラジルの複雑周回。走路を横切って往復する「サッカーボール」を
+//   避けながら走る(触れるとスピン＝新ギミック)。国旗色の縁石＋椰子の木＋砂浜。
+const T11 = [
+  [38, 120], [66, 124], [94, 121], [118, 124],  // 0-3 下ストレート(波打つ)
+  [136, 110], [144, 86], [144, 58],              // 4-6 右ストレート
+  [134, 36], [110, 28], [86, 32], [60, 26], [38, 32],  // 7-11 上部シケイン
+  [22, 52], [22, 78], [26, 102],                 // 12-14 左ストレート
+  [36, 118], [30, 123],                          // 15-16 左下コーナー→スタート
+];
+// 動く障害物(サッカーボール): 直線を横切って往復。触れるとスピン＋弾かれ＋小ダメージ。
+const T11_MOVERS = [
+  { x: 54, y: 123, dx: 0, dy: 1, range: 2.4, speed: 1.9, phase: 0.0 },   // 下ストレート
+  { x: 82, y: 122, dx: 0, dy: 1, range: 2.4, speed: 2.3, phase: 1.7 },
+  { x: 144, y: 72, dx: 1, dy: 0, range: 2.4, speed: 2.0, phase: 0.8 },   // 右ストレート
+  { x: 98, y: 30, dx: 0, dy: 1, range: 2.4, speed: 2.1, phase: 2.4 },    // 上部
+  { x: 72, y: 29, dx: 0, dy: 1, range: 2.4, speed: 1.8, phase: 0.5 },
+  { x: 22, y: 90, dx: 1, dy: 0, range: 2.4, speed: 2.2, phase: 1.3 },    // 左ストレート
+];
+
 const TRACKS = [
   {
     id: 'meadow',
@@ -547,6 +567,34 @@ const TRACKS = [
     boosts: pick(T10, [8, 15]),
     hazards: pick(T10, [2, 6, 12]),              // 急カーブ島に氷
     recover: pick(T10, [1, 11]),                 // ライフ回復ピット
+  },
+
+  {
+    id: 'rio',
+    name: 'リオ・カーニバル',
+    subtitle: 'Rio Carnival',
+    difficulty: '超超超超超超超激ムズ',
+    laps: 3,
+    tile: 80,
+    cols: 152, rows: 132,
+    roadHalf: 2.9, shoulder: 0.8,
+    music: 'race2',
+    hazardType: 'none',
+    theme: {
+      sky: '#2ec4ff', skyDk: '#0a8fd0',          // トロピカルな青空
+      grass: '#e8c766', grassDk: '#c9a24a',      // 砂浜(ビーチ)
+      road: '#3a4048', roadDk: '#282d33', line: '#ffe24d',   // 黄色ライン
+      wall: '#009c3b', wallTop: '#3fd07a',       // ブラジル緑の柵
+      curb1: '#009c3b', curb2: '#ffdf00',        // 緑×黄(国旗色)の縁石
+      boost: '#ffdf00', item: '#1e5bff', hazard: '#ff5a3a',  // 黄色ブースト/青アイテム
+      accent: '#ffdf00',
+    },
+    waypoints: T11,
+    movers: T11_MOVERS,                          // ★新ギミック=走路を横切る動くサッカーボール
+    items: itemRow(T11, [1, 8, 13], [-0.8, 0, 0.8]),
+    boosts: pick(T11, [5, 12]),
+    hazards: [],
+    recover: pick(T11, [3, 10]),                 // ライフ回復ピット(ボール被弾の回復用)
   },
 ];
 

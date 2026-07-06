@@ -36,6 +36,7 @@ const SCENERY_BY_TRACK = {
   neon: ['pillar', 'sign', 'pillar', 'sign'],
   magma: ['lavarock', 'flame', 'lavarock', 'spike'],
   void: ['pillar', 'spike', 'pillar', 'sign'],
+  rio: ['palm', 'palm', 'tree', 'palm'],   // ブラジル(ビーチ/トロピカル)
 };
 
 // 車種(後方視点シルエットの違い)。kindごとに翼/車体/タイヤ/キャビンを変える
@@ -150,6 +151,14 @@ class Track {
         this.voidRanges.push({ a: endPt % N, b: ((nextStartPt - 1) % N + N) % N });
       }
     }
+    // 動く障害物(サッカーボール等): 走路を横切って往復する。触れるとスピン(新ギミック)。
+    this.movers = (def.movers || []).map((w) => {
+      const [c, r] = M([w.x, w.y]);
+      let dx = w.dx, dy = w.dy; if (mirror) dx = -dx;
+      const L = Math.hypot(dx, dy) || 1;
+      const bx = c * this.tile, by = r * this.tile;
+      return { bx, by, dx: dx / L, dy: dy / L, range: (w.range || 3) * this.tile, speed: w.speed || 2, phase: w.phase || 0, cx: bx, cy: by, r: this.tile * 0.42, kind: w.kind || 'ball' };
+    });
     // ミニマップが切れないよう、分岐路/ワープ点も表示範囲(bounds)に含める
     const mg2 = this.tile * 2;
     const expand = (x, y) => {
@@ -1092,6 +1101,11 @@ class Game {
   // ---- 更新 -------------------------------------------------------------
   update(dt) {
     this.time += dt;
+    // 動く障害物の現在位置を更新(走路を横切って往復)
+    if (this.track.movers.length) for (const m of this.track.movers) {
+      const s = Math.sin(this.time * m.speed + m.phase);
+      m.cx = m.bx + m.dx * m.range * s; m.cy = m.by + m.dy * m.range * s;
+    }
 
     // ゲームオーバー(プレイヤー爆発): 爆発演出だけ進め、少し経ったら画面を出す
     if (this.state === 'gameover') {
@@ -1497,6 +1511,18 @@ class Game {
         }
       }
     }
+    // 動く障害物(サッカーボール等) vs カート: 触れるとスピン＋弾かれ＋小ダメージ(消えない)
+    for (const m of this.track.movers) {
+      for (const k of this.karts) {
+        if (k.finished || k.airZ > 0 || k.gone || k.spinTimer > 0 || k.invincTimer > 0 || k.dashTimer > 0) continue;
+        if (dist2(k.x, k.y, m.cx, m.cy) < (k.radius + m.r) * (k.radius + m.r)) {
+          k.startSpin(); k.hurt(10, this);
+          let dx = k.x - m.cx, dy = k.y - m.cy; const d = Math.hypot(dx, dy) || 1;
+          k.kbx += (dx / d) * 200; k.kby += (dy / d) * 200;   // ボールに弾かれる
+          audio.sfxBump(0.6);
+        }
+      }
+    }
     // カート同士(ぶつかると強く弾かれ・減速・火花・画面シェイク)
     for (let i = 0; i < this.karts.length; i++)
       for (let j = i + 1; j < this.karts.length; j++) {
@@ -1899,6 +1925,7 @@ class Game {
     for (const rp of T.ramps) add(rp.x, rp.y, (c, P) => this._spRamp(c, P));
     for (const b of T.itemBoxes) if (b.active) add(b.x, b.y, (c, P) => this._spItemBox(c, P));
     for (const o of this.obstacles) add(o.x, o.y, (c, P) => this._spBanana(c, P));
+    for (const m of T.movers) add(m.cx, m.cy, (c, P) => this._spMover(c, P, m));
     for (const pj of this.projectiles) add(pj.x, pj.y, (c, P) => this._spProjectile(c, P, pj));
     for (const ex of this.explosions) add(ex.x, ex.y, (c, P) => this._spExplosion(c, P, ex));
     for (const pa of this.particles) add(pa.x, pa.y, (c, P) => this._spParticle(c, P, pa));
@@ -2343,6 +2370,22 @@ class Game {
         ctx.quadraticCurveTo(x + w * 0.1, y - h * 0.5 * fl, x + w * 0.22, y); ctx.closePath(); ctx.fill();
         break;
       }
+      case 'palm': {   // 椰子の木(ブラジル/ビーチ)。風で少し揺れる。
+        const sway = Math.sin(this.time * 1.6 + sc.ph) * h * 0.05;
+        ctx.strokeStyle = '#8a5f30'; ctx.lineWidth = h * 0.08; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + h * 0.05, y - h * 0.45, x + sway, y - h * 0.82); ctx.stroke();
+        const tx = x + sway, ty = y - h * 0.82;
+        ctx.fillStyle = '#2fa348';
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI + (i / 5) * Math.PI;
+          const lx = tx + Math.cos(a) * h * 0.4, ly = ty + Math.abs(Math.sin(a)) * -h * 0.04 + Math.sin(a) * h * 0.06;
+          ctx.beginPath(); ctx.moveTo(tx, ty);
+          ctx.quadraticCurveTo((tx + lx) / 2, ty - h * 0.14, lx, ly + h * 0.1);
+          ctx.quadraticCurveTo((tx + lx) / 2, ty - h * 0.02, tx, ty); ctx.fill();
+        }
+        ctx.fillStyle = '#6b4a24'; ctx.beginPath(); ctx.arc(tx - h * 0.04, ty + h * 0.03, h * 0.045, 0, TAU); ctx.arc(tx + h * 0.05, ty + h * 0.04, h * 0.045, 0, TAU); ctx.fill();
+        break;
+      }
     }
     ctx.restore();
   }
@@ -2406,6 +2449,26 @@ class Game {
     // 中央マーク: ？ではなく きらめき(★型スパーク)
     ctx.fillStyle = '#7a4b00'; this._drawSpark(ctx, 0, 0, sc * 0.34); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.75)'; this._drawSpark(ctx, 0, 0, sc * 0.17); ctx.fill();
+    ctx.restore();
+  }
+  // 動く障害物: サッカーボール(転がり回転＋弾む)。ブラジルらしさ。
+  _spMover(ctx, P, m) {
+    const sc = clamp(P.scale * 62, 8, 260), u = sc / 40;
+    const bounce = Math.abs(Math.sin(this.time * 6 + m.phase)) * 6 * u;   // 弾む
+    ctx.save(); ctx.translate(P.sx, P.sy - sc * 0.42 - bounce);
+    // 接地影
+    ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(0, sc * 0.42 + bounce, sc * 0.42, sc * 0.14, 0, 0, TAU); ctx.fill();
+    ctx.rotate(this.time * 4 + m.phase);   // 転がる回転
+    // 白いボール本体＋陰影
+    const g = ctx.createRadialGradient(-6 * u, -6 * u, 2 * u, 0, 0, 20 * u);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#c9d2da');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 18 * u, 0, TAU); ctx.fill();
+    // 黒い五角形パターン(サッカーボール)
+    ctx.fillStyle = '#1a1e24';
+    const pent = (cx, cy, rr) => { ctx.beginPath(); for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * TAU / 5; ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); } ctx.closePath(); ctx.fill(); };
+    pent(0, 0, 5.5 * u);
+    for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * TAU / 5; pent(Math.cos(a) * 12 * u, Math.sin(a) * 12 * u, 3.2 * u); }
+    ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(0, 0, 18 * u, 0, TAU); ctx.stroke();
     ctx.restore();
   }
   _spBanana(ctx, P) {
