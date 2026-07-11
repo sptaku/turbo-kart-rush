@@ -75,9 +75,14 @@
   try { hyperUnlocked = localStorage.getItem('hyperchaos_unlocked') === '1'; } catch (e) {}
   try { errorUnlocked = localStorage.getItem('errorchaos_unlocked') === '1'; } catch (e) {}
   try { trueUnlocked = localStorage.getItem('truechaos_unlocked') === '1'; } catch (e) {}
+  // スーパーカオスでGP(全コース)を完走すると、公開版(上限=スーパー)でも
+  // 追加ダメージ倍率(3倍/2.5倍/1/25/1/30)を選べるようになる。解放は保存される。
+  let scGpCleared = false;
+  try { scGpCleared = localStorage.getItem('superchaos_gp_cleared') === '1'; } catch (e) {}
   let gpReviveCpu = true; // グランプリ: リタイヤしたCPUを次のステージで復活させるか
   // ダメージ倍率。sc:true はスーパーカオス(以上)ON時のみ(2倍/1.5倍/1/15/1/20)、
   // hc:true はハイパーカオス(以上)ON時のみ選べる(3倍/2.5倍/1/25/1/30)。
+  // ただし hc は「スーパーカオスでGP完走(scGpCleared)」済みなら、スーパー(2)でも選べる。
   const DMG_OPTS = [
     { scale: 3, label: '3倍', hc: true }, { scale: 2.5, label: '2.5倍', hc: true },
     { scale: 2, label: '2倍', sc: true }, { scale: 1.5, label: '1.5倍', sc: true },
@@ -90,7 +95,8 @@
   const DMG_NORMAL = DMG_OPTS.findIndex(o => o.scale === 1);
   const DMG_HALF = DMG_OPTS.findIndex(o => o.scale === 1 / 2);
   // その倍率が今のカオスレベルで選べないか(sc=スーパー以上=2, hc=ハイパー以上=3 が必要)
-  const dmgLocked = (o) => (o.sc && chaosLevel < 2) || (o.hc && chaosLevel < 3);
+  //   hc は scGpCleared(スーパーでGP完走)ならスーパー(2)でも解放。
+  const dmgLocked = (o) => (o.sc && chaosLevel < 2) || (o.hc && chaosLevel < 3 && !(scGpCleared && chaosLevel >= 2));
   // CPUランダム用の抽選プール: 今“選べる”倍率(0=なしは除く)。incl のときだけ 0 も加える。
   //   → スーパー/ハイパーを解放(ON)すると、追加された倍率も自動でランダムの候補に入る。
   const buildCpuPool = (mode) => {
@@ -348,6 +354,15 @@
           revealPedal();
           sub += wasNew ? '　🎊 ミラー＋操作反転で完走！ 🔁アクセル/ブレーキ反転モードを解放しました！'
                         : '　🔁 ミラー＋操作反転で完走！（アクセル/ブレーキ反転 解放済み）';
+        }
+        // スーパーカオス(=2)でGP完走 → 追加ダメージ倍率(3倍/2.5倍/1/25/1/30)を解放(公開版でも・保存)
+        if (chaosLevel === 2) {
+          const wasNew = !scGpCleared;
+          scGpCleared = true;
+          try { localStorage.setItem('superchaos_gp_cleared', '1'); } catch (e) {}
+          updateDmgUI();
+          sub += wasNew ? '　🔥 スーパーカオスでGP完走！ 追加ダメージ倍率(3倍/2.5倍/1/25/1/30)を解放しました！'
+                        : '　🔥 スーパーカオスでGP完走！（追加ダメージ倍率 解放済み）';
         }
         subEl.textContent = sub;
         btnNext.hidden = true; btnRematch.hidden = false; btnChange.hidden = true;
