@@ -35,6 +35,29 @@ function distToPath(P, x, y) {
   }
   return Math.sqrt(best);
 }
+// 分岐路(開いたCatmull-Rom) : game.js の _buildPath(open=true) と同式で展開
+function buildPathOpen(pts, seg) {
+  const n = pts.length, out = [];
+  const cr = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); };
+  const idx = (j) => Math.max(0, Math.min(n - 1, j));
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[idx(i - 1)], p1 = pts[idx(i)], p2 = pts[idx(i + 1)], p3 = pts[idx(i + 2)];
+    for (let s = 0; s < seg; s++) { const t = s / seg; out.push({ x: cr(p0.x, p1.x, p2.x, p3.x, t), y: cr(p0.y, p1.y, p2.y, p3.y, t) }); }
+  }
+  out.push({ x: pts[n - 1].x, y: pts[n - 1].y });
+  return out;
+}
+// 開いた折れ線への最短距離(端をループしない)
+function distToPolyOpen(P, x, y) {
+  let best = 1e18;
+  for (let i = 0; i < P.length - 1; i++) {
+    const a = P[i], b = P[i + 1];
+    const abx = b.x - a.x, aby = b.y - a.y, L = abx * abx + aby * aby || 1;
+    let t = ((x - a.x) * abx + (y - a.y) * aby) / L; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = a.x + abx * t - x, dy = a.y + aby * t - y; best = Math.min(best, dx * dx + dy * dy);
+  }
+  return Math.sqrt(best);
+}
 
 for (const t of TRACKS) {
   const errs = [];
@@ -49,9 +72,12 @@ for (const t of TRACKS) {
   if (miny - wall < 0.3) errs.push(`上にはみ出し (miny=${miny.toFixed(1)})`);
   if (maxx + wall > W - 0.3) errs.push(`右にはみ出し (maxx=${maxx.toFixed(1)}, cols=${W})`);
   if (maxy + wall > H - 0.3) errs.push(`下にはみ出し (maxy=${maxy.toFixed(1)}, rows=${H})`);
-  // 設置物が走路+路肩内か
+  // 分岐路(本線から分かれる走路)も展開しておき、設置物はどちらの走路の上でもOKとする
+  const branchPolys = (t.branches || []).map((b) => buildPathOpen(b.map(([c, r]) => ({ x: c, y: r })), 12));
+  // 設置物が走路+路肩内か(本線 or いずれかの分岐路)
   const onCourse = (arr, label) => (arr || []).forEach(([c, r], i) => {
-    const d = distToPath(P, c, r);
+    let d = distToPath(P, c, r);
+    for (const bp of branchPolys) d = Math.min(d, distToPolyOpen(bp, c, r));
     if (d > wall + 0.05) errs.push(`${label}[${i}](${c},${r}) がコース外 (d=${d.toFixed(2)} > ${wall})`);
   });
   onCourse(t.items, 'item'); onCourse(t.boosts, 'boost'); onCourse(t.hazards, 'hazard');
