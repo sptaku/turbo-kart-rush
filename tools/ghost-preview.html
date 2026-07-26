@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>ghost preview</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}#game{display:block}#shot{position:absolute;left:0;top:0}</style>
+</head><body>
+<canvas id="game"></canvas>
+<!-- headless では #game canvas が合成されず黒くなることがあるため、描画結果を img に写して撮影する -->
+<img id="shot">
+<script src="../js/tracks.js"></script>
+<script src="../js/audio.js"></script>
+<script src="../js/input.js"></script>
+<script src="../js/game.js"></script>
+<script>
+  // ゴースト(タイムアタックの自己ベスト再生)の見た目確認用。
+  //   ?track=0 コース / ?t=12 再生時刻(秒) / ?dist=260 ゴーストとの車間(px) / ?delta=-1.23 HUDのタイム差
+  const q = new URLSearchParams(location.search);
+  const trackIndex = parseInt(q.get('track') || '0', 10);
+  const t = parseFloat(q.get('t') || '12');
+  const dist = parseFloat(q.get('dist') || '260');
+  const delta = parseFloat(q.get('delta') || '-1.23');
+  audio.init = () => {}; audio.resume = () => {}; audio.playMusic = () => {}; audio.startEngine = () => {};
+
+  // 1) AIに少し走らせてゴーストを記録する
+  const g0 = new Game(document.createElement('canvas'));
+  g0.onFinish = () => {};
+  g0.startRace({ mode: 'time', trackIndex, players: 1, numKarts: 1, lifeOn: false });
+  g0.stop();                                    // rAFループは止めて手動で1コマずつ進める(撮影用)
+  g0.state = 'racing'; g0.countdown = 0;
+  g0._readHuman = (k) => k.computeAI(g0);
+  for (let i = 0; i < 60 * (t + 6); i++) g0.update(1 / 60);
+  const data = g0.ghostRec.toData({ track: TRACKS[trackIndex].id, time: g0.raceTime, laps: TRACKS[trackIndex].laps, mirror: false, speed: 1 });
+
+  // 2) そのゴーストと一緒に走る状態を作って1フレーム描画
+  const g = new Game(document.getElementById('game'));
+  g.onFinish = () => {};
+  g.startRace({ mode: 'time', trackIndex, players: 1, numKarts: 1, lifeOn: false, ghost: data });
+  g.stop();
+  g.state = 'racing'; g.countdown = 0; g.raceTime = t; g.hintTimer = 0;
+  g.ghost.update(t);
+  const gk = g.ghost.kart; gk.speed = g.ghost.speed; gk.steerSmooth = g.ghost.steerSmooth; gk.airZ = g.ghost.airZ;
+  const me = g.humans[0];                       // 自機をゴーストの少し後ろに置く
+  me.x = g.ghost.x - Math.cos(g.ghost.angle) * dist;
+  me.y = g.ghost.y - Math.sin(g.ghost.angle) * dist;
+  me.angle = g.ghost.angle; me.speed = 420; me.lapCount = 1;
+  g.ghostDelta = delta;
+  g.render();
+  document.getElementById('shot').src = document.getElementById('game').toDataURL();
+  window.__ready = true;
+</script>
+</body></html>

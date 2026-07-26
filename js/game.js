@@ -969,6 +969,108 @@ class Projectile {
   }
 }
 
+// ============================ ゴースト =====================================
+// タイムアタック専用。自己ベスト走行の軌跡を一定間隔で記録し(GhostRecorder)、
+// 次の走行で半透明のカートとして同時に走らせる(GhostReplay)。当たり判定は無し=すり抜ける。
+//   記録は「時刻 i*step の姿勢」を配列の i 番目に置く(コマ落ちで飛んだ分は補間して埋め、時刻ズレを防ぐ)。
+//   1サンプル = [x, y, angle*1000, airZ, prog*100] の整数5個(localStorage を小さく保つため)。
+const GHOST_STEP = 0.05;          // 記録間隔(秒) = 20Hz
+const GHOST_FIELDS = 5;           // 1サンプルあたりの値の数
+const GHOST_MAX_SAMPLES = 4000;   // 保存時の上限(20Hzで200秒)。超える長さは間引き(step を倍に)して収める
+
+class GhostRecorder {
+  constructor(step = GHOST_STEP) { this.step = step; this.d = []; this.n = 0; }
+  // t=raceTime の姿勢を記録(記録時刻に達したときだけ)。
+  //   配列の i 番目 = 時刻 i*step の姿勢。コマ落ちで飛んだ分は補間して埋め、時刻のズレを防ぐ。
+  sample(t, k) {
+    const idx = Math.floor(t / this.step + 1e-9);
+    if (idx < this.n || this.n > GHOST_MAX_SAMPLES * 8) return;   // まだ次の記録時刻でない/暴走防止
+    const rec = [Math.round(k.x), Math.round(k.y), Math.round(angNorm(k.angle) * 1000),
+      Math.round(k.airZ || 0), Math.round((k._prog || 0) * 100)];
+    const p = this.n > 0 ? (this.n - 1) * GHOST_FIELDS : -1;      // 直前サンプルの先頭index
+    const gap = idx - (this.n - 1);
+    for (let i = this.n; i <= idx; i++) {
+      if (p < 0 || i === idx) { for (const v of rec) this.d.push(v); continue; }
+      const f = (i - (this.n - 1)) / gap;                          // 直前サンプル→今の姿勢を線形補間
+      const a0 = this.d[p + 2];
+      this.d.push(Math.round(lerp(this.d[p], rec[0], f)), Math.round(lerp(this.d[p + 1], rec[1], f)),
+        Math.round(a0 + angNorm((rec[2] - a0) / 1000) * 1000 * f),
+        Math.round(lerp(this.d[p + 3], rec[3], f)), Math.round(lerp(this.d[p + 4], rec[4], f)));
+    }
+    this.n = idx + 1;
+  }
+  // 保存用データへ。長すぎる記録は間引いて GHOST_MAX_SAMPLES 以下にする。
+  toData(meta) {
+    let d = this.d, n = this.n, step = this.step;
+    while (n > GHOST_MAX_SAMPLES) {                                  // 1つ飛ばしで間引き(step は倍)
+      const nd = [];
+      for (let i = 0; i < n; i += 2) for (let f = 0; f < GHOST_FIELDS; f++) nd.push(d[i * GHOST_FIELDS + f]);
+      d = nd; n = Math.ceil(n / 2); step *= 2;
+    }
+    if (n < 2) return null;
+    return Object.assign({ v: 1, step: Math.round(step * 1000) / 1000, n, d }, meta || {});
+  }
+}
+
+class GhostReplay {
+  constructor(data, track) {
+    this.data = data;
+    this.step = data.step || GHOST_STEP;
+    this.d = data.d || [];
+    this.n = Math.min(data.n || 0, Math.floor(this.d.length / GHOST_FIELDS));
+    this.time = data.time != null ? data.time : null;      // 記録したときのトータルタイム
+    this.speedMul = data.speed || 1;                       // 記録時の最高速倍率(比較用の目安)
+    // ミラー設定が記録時と違うなら左右反転して現在のコースに合わせる(進捗progは反転で不変)
+    this.flip = (!!track.mirror) !== (!!data.mirror);
+    this.worldW = track.w;
+    this.active = this.n >= 2;
+    this.done = false;
+    this.fade = 1;
+    this.x = 0; this.y = 0; this.angle = 0; this.airZ = 0; this.prog = 0;
+    this.speed = 0; this.steerSmooth = 0;
+    // 進捗を単調増加に均す(タイム差の二分探索用)
+    this.prg = new Array(this.n);
+    let mx = -1e18;
+    for (let i = 0; i < this.n; i++) { mx = Math.max(mx, this.d[i * GHOST_FIELDS + 4] / 100); this.prg[i] = mx; }
+    if (this.active) this.update(0);
+  }
+  _at(i, f) { return this.d[i * GHOST_FIELDS + f]; }
+  // t 秒時点の姿勢へ更新(サンプル間は線形補間)。記録の終端に達したら done。
+  update(t) {
+    if (!this.active) return;
+    const f = Math.max(0, t) / this.step;
+    let i = Math.floor(f), fr = f - i;
+    if (i >= this.n - 1) { i = this.n - 1; fr = 0; this.done = true; } else this.done = false;
+    const j = Math.min(i + 1, this.n - 1);
+    const x0 = this._at(i, 0), y0 = this._at(i, 1), x1 = this._at(j, 0), y1 = this._at(j, 1);
+    const a0 = this._at(i, 2) / 1000, a1 = a0 + angNorm(this._at(j, 2) / 1000 - a0);
+    let x = lerp(x0, x1, fr), y = lerp(y0, y1, fr), a = lerp(a0, a1, fr);
+    // 見た目用の速度/舵角(スプライトの揺れ・傾きに使う)
+    const dt = this.step || 1;
+    this.speed = Math.hypot(x1 - x0, y1 - y0) / dt;
+    this.steerSmooth = clamp(angNorm(a1 - a0) / dt * 0.6, -1, 1);
+    this.airZ = lerp(this._at(i, 3), this._at(j, 3), fr);
+    this.prog = lerp(this.prg[i], this.prg[j], fr);
+    if (this.flip) { x = this.worldW - x; a = Math.PI - a; this.steerSmooth = -this.steerSmooth; }
+    this.x = x; this.y = y; this.angle = a;
+    // ゴールした後はすっと消える(スタートライン上に置き去りにしない)
+    this.fade = this.done ? Math.max(0, 1 - (t - (this.n - 1) * this.step) / 1.5) : 1;
+  }
+  get visible() { return this.active && this.fade > 0.02; }
+  // 進捗 p にゴーストが「最初に」到達した時刻(秒)。まだ届いていなければ記録タイムを返す。
+  //   (スピン等で止まっていた区間は同じ進捗が続くので、最初に到達した時刻を採る)
+  timeAtProg(p) {
+    if (!this.active) return null;
+    if (p <= this.prg[0]) return 0;
+    if (p >= this.prg[this.n - 1]) return this.time != null ? this.time : (this.n - 1) * this.step;
+    let lo = 0, hi = this.n - 1;                    // prg[lo] < p <= prg[hi] を保つ
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (this.prg[m] < p) lo = m; else hi = m; }
+    const a = this.prg[lo], b = this.prg[hi];
+    const fr = b > a ? (p - a) / (b - a) : 0;
+    return (lo + fr) * this.step;
+  }
+}
+
 // ============================ Game ========================================
 class Game {
   constructor(canvas) {
@@ -1048,6 +1150,21 @@ class Game {
     if (opts.retiredIds && opts.retiredIds.length) {
       const set = new Set(opts.retiredIds);
       for (const k of this.karts) if (!k.isHuman && set.has(k.id)) k._retired = true;
+    }
+    // ゴースト(タイムアタックのみ): 記録は常に行い、opts.ghost があれば一緒に走らせる
+    this.ghostRec = (this.mode === 'time' && opts.recordGhost !== false) ? new GhostRecorder() : null;
+    this.ghost = null;
+    this.ghostDelta = null;                        // 自分 − ゴースト の時間差(秒。マイナス=リード)
+    if (this.mode === 'time' && opts.ghost) {
+      const g = new GhostReplay(opts.ghost, this.track);
+      if (g.active) {
+        const me = this.humans[0];
+        // 描画用の疑似カート(当たり判定なし)。車種は自分と同じ形・色は青白いゴースト色。
+        const gd = { name: 'ゴースト', body: '#bfe9ff', dark: '#5b8ba8', kind: (me ? me.def.kind : 'f1') };
+        g.kart = { id: 0, def: gd, speed: 0, baseMax: HUMAN_BASE, steerSmooth: 0,
+          airZ: 0, life: 100, maxLife: 100, boostTimer: 0, invincTimer: 0, spinAngle: 0, drifting: false, hop: 0 };
+        this.ghost = g;
+      }
     }
     if (this.noItems) this.track.itemBoxes = [];   // アイテムボックスを消す
     // 開始時アイテム(タイムアタックで「3つキノコ」を最初から持つ等)。プレイヤーに付与。
@@ -1173,6 +1290,24 @@ class Game {
 
     // 順位
     this._ranking();
+
+    // ゴースト(タイムアタック): 自分の走りを記録しつつ、前回ベストの軌跡を再生する
+    if (this.state === 'racing' || this.state === 'finished') {
+      const me = this.humans[0];
+      if (this.ghostRec && me && !me.finished && !me.gone && this.state === 'racing')
+        this.ghostRec.sample(this.raceTime, me);
+      if (this.ghost) {
+        this.ghost.update(this.raceTime);
+        if (this.ghost.kart) {                      // 描画用の見た目パラメータを同期
+          const gk = this.ghost.kart;
+          gk.speed = this.ghost.speed; gk.steerSmooth = this.ghost.steerSmooth; gk.airZ = this.ghost.airZ;
+        }
+        // 「今の自分の地点にゴーストが居た時刻」との差。マイナス=自己ベストより速い。
+        // ゴール後は進捗が止まるので、その時点の差で固定する。
+        if (me && !me.gone && !me.finished)
+          this.ghostDelta = this.raceTime - this.ghost.timeAtProg(me._prog || 0);
+      }
+    }
 
     // スターBGM切替
     const anyStar = this.karts.some(k => k.invincTimer > 0);
@@ -1608,7 +1743,15 @@ class Game {
       bestLap: k.bestLap,
     }));
     const retiredIds = this.karts.filter(k => k._retired).map(k => k.id);   // リタイヤしたCPU
-    if (this.onFinish) this.onFinish({ mode: this.mode, trackIndex: this.trackIndex, gpRace: this.gpRace, order: results, retiredIds });
+    // タイムアタック: 完走した走行のゴースト記録(保存の可否は呼び出し側=main.jsが判断)
+    let ghost = null;
+    const me = this.karts.find(k => k.isHuman);
+    if (this.mode === 'time' && this.ghostRec && me && me.finished) {
+      ghost = this.ghostRec.toData({ track: this.def.id, time: me.finishTime, laps: this.def.laps,
+        mirror: !!this.mirror, speed: this.speedMul });
+    }
+    if (this.onFinish) this.onFinish({ mode: this.mode, trackIndex: this.trackIndex, gpRace: this.gpRace, order: results, retiredIds,
+      ghost, ghostTime: (this.ghost && this.ghost.time != null) ? this.ghost.time : null });
   }
 
   // スタート位置を「走路の実中央」に補正して生成(壁めり込み防止)
@@ -1930,6 +2073,7 @@ class Game {
     for (const ex of this.explosions) add(ex.x, ex.y, (c, P) => this._spExplosion(c, P, ex));
     for (const pa of this.particles) add(pa.x, pa.y, (c, P) => this._spParticle(c, P, pa));
     for (const kt of this.karts) if (kt !== k && !kt.gone) add(kt.x, kt.y, (c, P) => this._spKart(c, P, kt, false));
+    if (this.ghost && this.ghost.visible) add(this.ghost.x, this.ghost.y, (c, P) => this._spGhost(c, P));
     // 奥から手前へ
     sprites.sort((u, v) => v.pr.fdist - u.pr.fdist);
     for (const sp of sprites) sp.draw(ctx, sp.pr);
@@ -2017,6 +2161,31 @@ class Game {
       ctx.fillRect(bx, by, bw * r, 3);
     }
   }
+  // ゴースト(自己ベストの再生): 半透明のカート＋足元の淡い光。触れてもすり抜ける。
+  _spGhost(ctx, P) {
+    const g = this.ghost, sc = clamp(P.scale * 96, 12, 320);
+    const al = 0.42 * clamp(g.fade, 0, 1);
+    ctx.save();
+    // 足元の光(そこに「居る」ことが分かるように)
+    const gr = ctx.createRadialGradient(P.sx, P.sy, 0, P.sx, P.sy, sc * 0.55);
+    gr.addColorStop(0, `rgba(150,235,255,${0.5 * al})`); gr.addColorStop(1, 'rgba(150,235,255,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.ellipse(P.sx, P.sy, sc * 0.55, sc * 0.2, 0, 0, TAU); ctx.fill();
+    // カート本体(半透明。色は青白いゴースト色にして生身のカートと見分けやすく)
+    ctx.globalAlpha = al;
+    this._spKart(ctx, P, g.kart, false);
+    ctx.restore();
+    // 👻マーク(近くて大きく映るときだけ)
+    if (sc > 30) {
+      ctx.save();
+      ctx.globalAlpha = clamp(g.fade, 0, 1) * 0.85;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `${Math.round(sc * 0.3)}px sans-serif`;
+      ctx.fillText('👻', P.sx, P.sy - sc * 0.86 - g.airZ * (sc / 64));
+      ctx.restore();
+    }
+  }
+
   // 共通: 後方視点のレーシングカート(かっこよく)
   _kartSprite(ctx, x, y, sc, k, isSelf, lift = 0) {
     ctx.save();
@@ -2560,6 +2729,22 @@ class Game {
       ctx.fillText('/ ' + this.karts.filter(c => !c.gone).length, x0 + boxW - 12, y0 + 44);   // 残っている台数
     }
 
+    // ゴーストとの差(タイムアタック)。「今の地点にゴーストが居た時刻」との差を出す。
+    //  マイナス(青)=自己ベストより速い / プラス(赤)=遅れている
+    if (timeMode && this.ghost && this.ghostDelta != null) {
+      const d = this.ghostDelta, ahead = d < 0;
+      const gw = 176, gx = x0, gy = y0 + boxH + 6 + 17 + 6;   // ライフバーの下
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; this._roundRect(ctx, gx, gy, gw, 26, 8); ctx.fill();
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = 'bold 12px sans-serif';
+      ctx.fillText('👻 ゴースト', gx + 8, gy + 13);
+      ctx.textAlign = 'right'; ctx.font = 'bold 17px monospace';
+      ctx.fillStyle = ahead ? '#5ef2ff' : '#ff8a6a';
+      const sec = Math.abs(d) >= 100 ? Math.abs(d).toFixed(1) : Math.abs(d).toFixed(2);
+      ctx.fillText((ahead ? '▲ -' : '▼ +') + sec, gx + gw - 8, gy + 13);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    }
+
     // ライフバー(プレイヤーの耐久力)。残量で緑→黄→赤、少なくなると点滅。
     {
       const lw = boxW, lx = x0, ly = y0 + boxH + 6, lh = 17;
@@ -2737,6 +2922,14 @@ class Game {
       if (o === k || o.gone) continue;       // 爆発/リタイヤはミニマップから消す
       ctx.fillStyle = o.def.body;
       ctx.beginPath(); ctx.arc(sx(o.x), sy(o.y), Math.max(3, mw * 0.045), 0, TAU); ctx.fill();
+    }
+    // ゴースト(白抜きの丸)
+    if (this.ghost && this.ghost.visible) {
+      ctx.globalAlpha = 0.85 * clamp(this.ghost.fade, 0, 1);
+      ctx.fillStyle = 'rgba(190,235,255,0.55)';
+      ctx.beginPath(); ctx.arc(sx(this.ghost.x), sy(this.ghost.y), Math.max(3.5, mw * 0.05), 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#9fe8ff'; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     ctx.fillStyle = k.def.body;
     ctx.beginPath(); ctx.arc(sx(k.x), sy(k.y), Math.max(4, mw * 0.06), 0, TAU); ctx.fill();

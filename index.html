@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>ターボ・カート・ラッシュ</title>
-  <link rel="stylesheet" href="css/style.css?v=20260711" />
+  <link rel="stylesheet" href="css/style.css?v=20260726" />
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -38,6 +38,7 @@
         <button class="ghost" id="dmg-cpu-toggle">💥 CPUのダメージ: 通常</button>
         <button class="ghost" id="offcourse-toggle">🌱 コース外ダメージ: あり</button>
         <button class="ghost" id="tatriple-toggle">🍄 タイムアタックで3つキノコ所持: ON</button>
+        <button class="ghost" id="ghost-toggle">👻 タイムアタックのゴースト: ON</button>
         <button class="ghost" id="speed-toggle">🏎 最高速: 通常</button>
         <button class="ghost" id="phys-toggle">⚛ 高精度物理: OFF</button>
         <button class="ghost" id="trans-toggle">⚙ ミッション: オートマ（AT）</button>
@@ -168,6 +169,10 @@
         <p>タイトルの <b>⚙ ミッション</b> で AT（全自動）→ セミAT（自動＋手動シフト可）→ MT（完全手動）を切替。MT/セミAT では上のシフトキーでギア（N/R/1〜5）を操作します。</p>
       </div>
       <div class="item-legend">
+        <h3>👻 タイムアタックのゴースト</h3>
+        <p>タイムアタックでは<b>自己ベストの走り</b>が記録され、次回から<b>半透明のカート（ゴースト）</b>として一緒に走ります（<b>すり抜けるのでぶつかりません</b>）。走行中は左上に <b>👻 ゴーストとの差</b> を表示（<b>▲ -0.42=自己ベストより速い / ▼ +1.15=遅れている</b>）。ベストを更新するとゴーストも自動で差し替わります。タイトルの <b>「👻 タイムアタックのゴースト」</b> でON/OFF、リザルトの <b>「🗑 このコースのゴースト記録を消す」</b> でリセットできます。</p>
+      </div>
+      <div class="item-legend">
         <h3>アイテム</h3>
         <p>🍄キノコ=加速 / 🍌バナナ=設置 / 🟢グリーンボール=直進 / 🔴レッドボール=追尾 / ⭐スター=無敵＆BGMチェンジ / 💣ボムへい=爆発 / 🪝<b>グラップル・ダッシュ</b>=前のカートにロックオンして引き寄せ（独自要素・マリオカートに無い）</p>
       </div>
@@ -182,6 +187,7 @@
       <div class="btn-col">
         <button class="big" id="next-race">▶ 次のレースへ</button>
         <button class="big" id="rematch">🔄 もう一度（同じコース）</button>
+        <button class="ghost" id="ghost-clear" hidden>🗑 このコースのゴースト記録を消す</button>
         <button class="ghost" id="change-course">コースを変える</button>
         <button class="ghost" id="to-title">タイトルへ</button>
       </div>
@@ -230,10 +236,10 @@
   </div>
   <div id="tc-rotate">↔ 横向きでのプレイがおすすめです</div>
 
-  <script src="js/tracks.js?v=20260711"></script>
-  <script src="js/audio.js?v=20260711"></script>
-  <script src="js/input.js?v=20260711"></script>
-  <script src="js/game.js?v=20260711"></script>
-  <script src="js/main.js?v=20260711"></script>
+  <script src="js/tracks.js?v=20260726"></script>
+  <script src="js/audio.js?v=20260726"></script>
+  <script src="js/input.js?v=20260726"></script>
+  <script src="js/game.js?v=20260726"></script>
+  <script src="js/main.js?v=20260726"></script>
 </body>
 </html>

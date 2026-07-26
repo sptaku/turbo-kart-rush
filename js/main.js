@@ -57,6 +57,8 @@
   let offcourseDamage = true;                // コース外(芝生)でダメージを受けるか
   let taTriple = true;                       // タイムアタックで「3つキノコ」を最初から持つ(既定ON)
   try { const v = localStorage.getItem('ta_triple'); if (v != null) taTriple = (v === '1'); } catch (e) {}
+  let ghostOn = true;                        // タイムアタックでゴースト(自己ベストの走り)と走る(既定ON)
+  try { const v = localStorage.getItem('ta_ghost_on'); if (v != null) ghostOn = (v === '1'); } catch (e) {}
   let musicStyle = 'chip'; // 'chip'(ピコピコ) | 'orchestra'(オーケストラ)
   let richGfx = true;     // リッチ(沿道装飾・空) / シンプル
   let aiDiff = 'normal';  // CPUの強さ: weak | normal | strong | super
@@ -174,6 +176,21 @@
     courseList.appendChild(card);
   });
 
+  // ---- ゴースト(タイムアタックの自己ベスト走行) --------------------------
+  // localStorage に コースごと 1本だけ保存する。キー: ta_ghost_<コースid>
+  const ghostKey = (trackIndex) => 'ta_ghost_' + TRACKS[trackIndex].id;
+  function loadGhost(trackIndex) {
+    try {
+      const g = JSON.parse(localStorage.getItem(ghostKey(trackIndex)) || 'null');
+      return (g && Array.isArray(g.d) && g.n >= 2) ? g : null;
+    } catch (e) { return null; }
+  }
+  function saveGhost(trackIndex, data) {
+    try { localStorage.setItem(ghostKey(trackIndex), JSON.stringify(data)); return true; }
+    catch (e) { return false; }              // 容量オーバー等。タイム記録だけは残る
+  }
+  function clearGhost(trackIndex) { try { localStorage.removeItem(ghostKey(trackIndex)); } catch (e) {} }
+
   // VSのCPU最低数: 人間1人なら最低1台、2人以上なら0台もOK
   const minCpu = () => (players >= 2 ? 0 : 1);
 
@@ -210,7 +227,8 @@
       cpuDamageRandom: DMG_CPU[dmgIdxC].random || null,
       cpuDamagePool: DMG_CPU[dmgIdxC].random ? buildCpuPool(DMG_CPU[dmgIdxC].random) : null,
       speedMul: SPEED_OPTS[speedIdx], accuratePhysics, offcourseDamage,
-      startItem: (mode === 'time' && taTriple) ? 'mushroom3' : null };   // TAは最初から3つキノコ(設定)
+      startItem: (mode === 'time' && taTriple) ? 'mushroom3' : null,   // TAは最初から3つキノコ(設定)
+      ghost: (mode === 'time' && ghostOn) ? loadGhost(trackIndex) : null };   // TAはゴーストと同時走行(設定)
     if (mode === 'gp' && gp) opts.gpRace = { index: gp.idx + 1, total: gp.seq.length };
     game.startRace(opts);
   }
@@ -288,6 +306,17 @@
     ol.appendChild(li);
   }
 
+  // ゴースト記録の消去ボタン(タイムアタックのリザルトにだけ出す)
+  const ghostClearBtn = document.getElementById('ghost-clear');
+  let pendingGhostClear = null;
+  ghostClearBtn.addEventListener('click', () => {
+    if (pendingGhostClear == null) return;
+    clearGhost(pendingGhostClear);
+    ghostClearBtn.textContent = '🗑 ゴースト記録を消しました';
+    ghostClearBtn.disabled = true;
+    setTimeout(() => { ghostClearBtn.hidden = true; ghostClearBtn.disabled = false; }, 900);
+  });
+
   game.onFinish = (res) => {
     toolbar.classList.add('hidden');
     game.stop();
@@ -298,6 +327,7 @@
     const btnRematch = document.getElementById('rematch');
     const btnChange = document.getElementById('change-course');
     btnNext.hidden = true; btnRematch.hidden = false; btnChange.hidden = false;
+    ghostClearBtn.hidden = true;
     btnRematch.textContent = '🔄 もう一度（同じコース）';
     pendingRematch = () => beginRace(res.trackIndex);
     pendingNext = null;
@@ -310,8 +340,31 @@
       let rec = '';
       if (me.time != null && (!isFinite(prev) || me.time < prev)) { localStorage.setItem(key, String(me.time)); rec = ' 🏆 NEW RECORD!'; }
       const best = parseFloat(localStorage.getItem(key) || '');
-      subEl.innerHTML = `${TRACKS[res.trackIndex].name}<br>トータル <b>${fmtT(me.time)}</b>${rec}　／　ベストラップ ${fmtT(me.bestLap)}<br>コース記録 ${fmtT(isFinite(best) ? best : null)}`;
-      addRow(ol, 1, me.body, me.name, fmtT(me.time), true);
+
+      // ゴースト: 一緒に走ったなら勝敗を表示。今のゴーストより速ければ差し替えて保存(初回は無条件)。
+      let ghostMsg = '';
+      if (res.ghostTime != null && me.time != null) {
+        const d = me.time - res.ghostTime;
+        ghostMsg = d < 0 ? `　👻 ゴーストに ${Math.abs(d).toFixed(2)}秒 差をつけて勝利！`
+                         : `　👻 ゴーストに ${d.toFixed(2)}秒 及ばず…`;
+      }
+      const oldGhost = loadGhost(res.trackIndex);
+      if (res.ghost && res.ghost.time != null && (!oldGhost || oldGhost.time == null || res.ghost.time < oldGhost.time)) {
+        ghostMsg += saveGhost(res.trackIndex, res.ghost)
+          ? (oldGhost ? '　👻 ゴーストを更新しました！' : '　👻 ゴーストを記録しました！次回から一緒に走れます')
+          : '　⚠ ゴーストの保存に失敗（保存容量が不足）';
+      }
+      subEl.innerHTML = `${TRACKS[res.trackIndex].name}<br>トータル <b>${fmtT(me.time)}</b>${rec}　／　ベストラップ ${fmtT(me.bestLap)}<br>コース記録 ${fmtT(isFinite(best) ? best : null)}${ghostMsg}`;
+
+      // 自分とゴーストを並べて表示(ゴーストと走ったときだけ2行)
+      const rows = [{ body: me.body, name: me.name, time: me.time, you: true }];
+      if (res.ghostTime != null) rows.push({ body: '#bfe9ff', name: '👻 ゴースト（前回のベスト）', time: res.ghostTime, you: false });
+      rows.sort((a, b) => (a.time == null ? 1e9 : a.time) - (b.time == null ? 1e9 : b.time));
+      rows.forEach((r, i) => addRow(ol, i + 1, r.body, r.name, fmtT(r.time), r.you));
+      // このコースのゴーストを消すボタン(記録がある時だけ表示)
+      ghostClearBtn.hidden = !loadGhost(res.trackIndex);
+      ghostClearBtn.textContent = '🗑 このコースのゴースト記録を消す';
+      pendingGhostClear = res.trackIndex;
 
     } else if (res.mode === 'gp') {
       res.order.forEach(r => {
@@ -609,6 +662,19 @@
     updateTaUI();
   });
   updateTaUI();
+
+  // 👻 タイムアタックのゴースト(自己ベストの走りと同時に走る)ON/OFF。設定は保存。
+  const ghostBtn = document.getElementById('ghost-toggle');
+  function updateGhostUI() {
+    ghostBtn.textContent = '👻 タイムアタックのゴースト: ' + (ghostOn ? 'ON' : 'OFF');
+    ghostBtn.classList.toggle('on', ghostOn);
+  }
+  ghostBtn.addEventListener('click', () => {
+    ghostOn = !ghostOn;
+    try { localStorage.setItem('ta_ghost_on', ghostOn ? '1' : '0'); } catch (e) {}
+    updateGhostUI();
+  });
+  updateGhostUI();
 
   // 音楽スタイル切替(ピコピコ ⇄ オーケストラ)。再生中でも即反映。
   const musicBtn = document.getElementById('music-toggle');
