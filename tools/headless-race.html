@@ -89,5 +89,22 @@
     g.update(1 / 60);          // 衝突を発生させる
     g.update = () => {};        // 以降フリーズして演出を保持
   }
+  // 検証用: アイテムの2ストック表示(?item=star&item2=mushroom3 のように指定)
+  if (q.get('item') || q.get('item2')) {
+    const me = g.humans[0];
+    me.item = q.get('item') || null; me.itemCount = me.item === 'mushroom3' ? 3 : (me.item ? 1 : 0);
+    me.item2 = q.get('item2') || null; me.itemCount2 = me.item2 === 'mushroom3' ? 3 : (me.item2 ? 1 : 0);
+    me.itemFlash = 0; me.itemShift = 0;
+    g.state = 'racing'; g.countdown = 0; g.hintTimer = 0;
+    g.stop();                  // rAFループを止めて1コマだけ描く(撮影用)
+    g.render();
+  }
+  // headless では #game canvas が合成されず黒くなることがあるため、?shot=1 で img に写す
+  if (q.get('shot') === '1') {
+    const im = document.createElement('img');
+    im.style.cssText = 'position:absolute;left:0;top:0';
+    im.src = document.getElementById('game').toDataURL();
+    document.body.appendChild(im);
+  }
 </script>
 </body></html>

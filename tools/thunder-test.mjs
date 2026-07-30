@@ -53,7 +53,7 @@ t('周期はバラバラ(同時に落ちて逃げ場が無くならない)', new
   const b = g.track.bolts[0], k = g.humans[0];
   k.x = b.x; k.y = b.y; k.invincTimer = 0; k.life = 100; k.speed = 300;
   g.raceTime = strikeAt(b); g._updateBolts();
-  t('直撃で大ダメージ(既定倍率1/2で20以上)', k.life <= 80 && k.life < 100);
+  t('直撃で大ダメージ(倍率1倍で BOLT_DMG ぶん)', Math.abs(k.life - (100 - BOLT_DMG)) < 1e-6);
   t('直撃でスピンする', k.spinTimer > 0);
   t('直撃で画面が揺れる(bumpTimer)', k.bumpTimer > 0);
   // 同じサイクルでは二度と落ちない
@@ -89,11 +89,25 @@ t('周期はバラバラ(同時に落ちて逃げ場が無くならない)', new
   t('3倍でも一撃死しない(下限が残る)', !k._exploded && k.life >= k.maxLife * BOLT_MIN_LIFE - 1e-9);
   // 何度落ちてもゴーストにならない(ライフは下限で止まる)
   for (let c = 2; c < 12; c++) {
-    k.x = b.x; k.y = b.y; k.invincTimer = 0; k.spinTimer = 0; k.hurtCd = 0;
+    k.x = b.x; k.y = b.y; k.invincTimer = 0; k.spinTimer = 0; k.hurtCd = 0; k.mercyTimer = 0;
     g.raceTime = strikeAt(b, c); g._updateBolts();
   }
   t('連続直撃でも爆発しない(下限で止まる)', !k._exploded && k.life >= k.maxLife * BOLT_MIN_LIFE - 1e-9);
   t('下限までは確実に削れる', k.life <= k.maxLife * BOLT_MIN_LIFE + 1e-9);
+}
+
+// --- 直撃直後は追い打ちを受けない(よろけている間の即死を防ぐ) --------------
+{
+  const g = newGame();
+  const b = g.track.bolts[0], k = g.humans[0];
+  k.x = b.x; k.y = b.y; k.invincTimer = 0; k.life = 100;
+  g.raceTime = strikeAt(b); g._updateBolts();
+  const after = k.life;
+  t('直撃後は小休止がつく(mercyTimer)', k.mercyTimer > 0);
+  k.hurtCd = 0; k.hurt(30, g);
+  t('小休止中は他のダメージも入らない', k.life === after);
+  k.mercyTimer = 0; k.hurt(30, g);
+  t('小休止が明ければ通常どおりダメージが入る', k.life === after - 30);   // このテストは倍率1倍
 }
 
 // --- ダメージ倍率が効く(自分/CPU独立) ------------------------------------
@@ -142,21 +156,36 @@ t('周期はバラバラ(同時に落ちて逃げ場が無くならない)', new
 }
 
 // --- 実走: 走り続けると落雷を食らうが、レースは成立する(AIが完走できる) ----
-{
-  const g = newGame({ lifeOn: true, aiDiff: 'normal' });
+//     ゲーム既定のプレイヤー倍率(1/2)では確実に完走。CPU相当の等倍でも大半は完走する。
+const runLap = (scale, withBolts = true) => {
+  const g = newGame({ lifeOn: true, playerDamageScale: scale, aiDiff: 'normal' });
+  if (!withBolts) g.track.bolts = [];                       // 比較用: 落雷なしで同じ条件を走る
   g._readHuman = (kk) => kk.computeAI(g);
-  let hits = 0, prevLife = g.humans[0].life;
-  for (let i = 0; i < 60 * 300; i++) {
+  let hits = 0, prev = g.humans[0].life;
+  for (let i = 0; i < 60 * 400; i++) {
     g.update(1 / 60);
     const k = g.humans[0];
-    if (k.life < prevLife - 5) hits++;                      // 大きく減った=落雷
-    prevLife = k.life;
+    if (k.life < prev - 5) hits++;                          // 大きく減った=落雷
+    prev = k.life;
     if (k.finished || k.gone) break;
   }
   const k = g.humans[0];
-  t('落雷が実走中に発生する', g.track.bolts.some((b) => b.fired >= 0));
-  t('落雷があってもAIは完走できる(破綻しない)', k.finished === true && !k._exploded);
-  console.log(`   （参考）大ダメージ回数=${hits} 残ライフ=${k.life.toFixed(1)} タイム=${k.finishTime.toFixed(1)}s`);
+  return { struck: g.track.bolts.some((b) => b.fired >= 0), done: k.finished && !k._exploded, hits, life: k.life };
+};
+{
+  const r = runLap(0.5);                                    // 既定(自分のダメージ=1/2)
+  t('落雷が実走中に発生する', r.struck);
+  t('既定の倍率(1/2)ならAIは確実に完走できる', r.done);
+  console.log(`   （参考・倍率1/2）大ダメージ回数=${r.hits} 残ライフ=${r.life.toFixed(1)}`);
+  // CPU相当(等倍)は、リオ自体が元々きつい(ボール/芝生で稀に落ちる)ので
+  // 「落雷なしの場合と比べて完走数が落ちない」ことで“落雷が壊していない”を見る。
+  let withB = 0, without = 0, lives = [];
+  for (let i = 0; i < 4; i++) {
+    const a = runLap(1, true); if (a.done) { withB++; lives.push(a.life); }
+    if (runLap(1, false).done) without++;
+  }
+  t('等倍(CPU相当)でも落雷なしと同程度に完走する', withB >= without - 1);
+  console.log(`   （参考・倍率1倍）完走 落雷あり ${withB}/4・落雷なし ${without}/4 残ライフ=${lives.map((v) => v.toFixed(0)).join(',')}`);
 }
 
 // --- 描画してもエラーにならない(予兆/落雷/ミニマップ) ---------------------

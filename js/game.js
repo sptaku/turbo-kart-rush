@@ -23,9 +23,11 @@ const HUMAN_BASE = 610;    // 人間の最高速(基準)
 const JUMP_GRAV = 680;     // ジャンプの重力(高さの減速)
 // ⚡落雷(スコール)ギミック: 直撃は大ダメージだが、単発では倒れない(下限を残す)ので
 //    レースが破綻しない。倍率(自分/CPU)は通常どおり掛かる。
-const BOLT_DMG = 45;       // 直撃のダメージ(倍率適用前)
-const BOLT_MIN_LIFE = 0.15; // 直撃後に必ず残るライフ(最大値比) = 落雷だけでは撃墜されない
+const BOLT_DMG = 40;       // 直撃のダメージ(倍率適用前)。ゲーム中で最大級の一撃
+const BOLT_MIN_LIFE = 0.3;  // 直撃後に必ず残るライフ(最大値比) = 落雷だけでは撃墜されない。
+                            //   下限が低すぎると「落雷→瀕死→他の罠で即死」が多発してレースが壊れる
 const BOLT_STRIKE = 0.34;  // 落雷の見た目の長さ(秒)。判定は落ちた瞬間のみ
+const BOLT_MERCY = 1.2;    // 直撃直後は無ダメージ(スピン中に芝生や罠で追い打ち→即死 を防ぐ)
 // CPUの強さ4段階(speed=最高速倍率, item=アイテム使用間隔の倍率(小さいほど多用))
 const AI_DIFF = {
   weak:   { speed: 0.80, item: 1.9, label: '弱い' },
@@ -551,6 +553,7 @@ class Kart {
     this.airZ = 0; this.airVz = 0;             // ジャンプ(空中の高さ/上昇速度)
     this.maxLife = 100; this.life = 100;       // ライフ(耐久力)。0以下で爆発
     this.hurtCd = 0;                           // 連続ダメージの間隔
+    this.mercyTimer = 0;                       // 落雷直後の無ダメージ時間(追い打ち防止)
     this.hurtFlash = 0;                        // 被ダメージ表示
     this._exploded = false;                    // 人間: 爆発して脱落(操作不能)
     this._retired = false;                     // CPU: 爆発してリタイヤ(消滅)
@@ -575,9 +578,14 @@ class Kart {
     this.driftDir = 0;
     this.driftCharge = 0;
 
+    // アイテムは2ストック。使えるのは1ストック目(item)だけで、2ストック目(item2)は
+    // 「持っているだけ」。1ストック目を使い切ると2ストック目が1ストック目へ繰り上がる。
     this.item = null;
     this.itemCount = 0;     // 複数回使えるアイテム(3つキノコ)の残り回数
+    this.item2 = null;      // 2ストック目(まだ使えない)
+    this.itemCount2 = 0;
     this.itemFlash = 0;
+    this.itemShift = 0;     // 2ストック目が繰り上がった演出
     this.dropImmune = 0;    // 自分が置いたバナナへの一時無敵
 
     // 周回管理(中心線上の連続位置で判定)
@@ -604,6 +612,7 @@ class Kart {
   //   minLife を渡すと「そこまでしか減らない」= 一撃では倒れない(落雷など大ダメージ用)。
   hurt(amount, game, minLife) {
     if (!game.lifeOn || this.gone || this.invincTimer > 0 || this.dashTimer > 0 || this.finished) return;
+    if (this.mercyTimer > 0) return;   // 落雷直後の小休止(よろけている間は追い打ちを受けない)
     let scale;
     if (this.isHuman) scale = game.playerDamageScale;
     else if (game.cpuDamageRandom) {                          // CPUごとに一度だけランダム倍率を割り当て
@@ -631,11 +640,13 @@ class Kart {
     if (this.boostTimer > 0) this.boostTimer -= sdt;
     if (this.dropImmune > 0) this.dropImmune -= dt;
     if (this.itemFlash > 0) this.itemFlash -= dt;
+    if (this.itemShift > 0) this.itemShift -= dt;
     if (this.bumpTimer > 0) this.bumpTimer -= dt;
     if (this.wallHitCd > 0) this.wallHitCd -= dt;
     if (this.rescueFlash > 0) this.rescueFlash -= dt;
     if (this.fireFlash > 0) this.fireFlash -= dt;
     if (this.hurtCd > 0) this.hurtCd -= dt;
+    if (this.mercyTimer > 0) this.mercyTimer -= dt;
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
     if (this.hop > 0) this.hop = Math.max(0, this.hop - dt * 3);
 
@@ -1402,6 +1413,7 @@ class Game {
       if (k.gone || k.finished || k.invincTimer > 0 || k.dashTimer > 0) continue;
       if (dist2(k.x, k.y, b.x, b.y) > R2) continue;                              // 空中(ジャンプ中)でも直撃する
       k.hurt(BOLT_DMG, this, k.maxLife * BOLT_MIN_LIFE);
+      k.mercyTimer = BOLT_MERCY;                                                 // よろけている間は追い打ち無し
       k.startSpin();
       k.hurtFlash = Math.min(0.6, k.hurtFlash + 0.45);
       k.hurtCd = Math.max(k.hurtCd, 0.4);
@@ -1575,29 +1587,42 @@ class Game {
   }
 
   // ---- アイテム ---------------------------------------------------------
+  // アイテムは2ストックまで持てる。空いている方から順に入る(1ストック目→2ストック目)。
   giveItem(k) {
+    if (k.item && k.item2) return;                      // 2つとも埋まっていたら取れない
     // 順位に応じた重み(後ろほど強いアイテム)
     const place = k.place;
     let pool;
     if (place === 1) pool = ['banana', 'banana', 'green', 'green', 'mushroom', 'red'];
     else if (place === 2) pool = ['green', 'red', 'mushroom', 'mushroom', 'banana', 'grapple', 'bomb', 'mushroom3'];
     else pool = ['mushroom', 'red', 'star', 'grapple', 'grapple', 'bomb', 'star', 'mushroom3'];
-    k.item = pool[Math.floor(Math.random() * pool.length)];
-    k.itemCount = (k.item === 'mushroom3') ? 3 : 1;     // 3つキノコは3回使える
+    const type = pool[Math.floor(Math.random() * pool.length)];
+    const cnt = (type === 'mushroom3') ? 3 : 1;         // 3つキノコは3回使える
+    if (!k.item) { k.item = type; k.itemCount = cnt; }  // 1ストック目が空ならそこへ
+    else { k.item2 = type; k.itemCount2 = cnt; }        // 埋まっていれば2ストック目(まだ使えない)
     k.itemFlash = 0.6;
     audio.sfxPickup();
   }
+  // 1ストック目を使い切ったら、2ストック目を1ストック目へ繰り上げる
+  _shiftItem(k) {
+    if (k.item || !k.item2) return;
+    k.item = k.item2; k.itemCount = k.itemCount2;
+    k.item2 = null; k.itemCount2 = 0;
+    k.itemShift = 0.5;                                  // 繰り上がりの表示用
+  }
 
+  // 使えるのは1ストック目だけ(2ストック目は持っているだけ)
   useItem(k) {
     const type = k.item; if (!type) return;
     // 3つキノコ: キノコ効果を出して残り回数を1減らす(0で使い切り)
     if (type === 'mushroom3') {
       k.boostTimer = Math.max(k.boostTimer, 1.4); audio.sfxBoost();
       k.itemCount = (k.itemCount || 1) - 1;
-      if (k.itemCount <= 0) { k.item = null; k.itemCount = 0; }
+      if (k.itemCount <= 0) { k.item = null; k.itemCount = 0; this._shiftItem(k); }
       return;
     }
     k.item = null; k.itemCount = 0;
+    this._shiftItem(k);
     const fx = Math.cos(k.angle), fy = Math.sin(k.angle);
     // 投擲物は自機の少し前方(画面に映る位置)から発射。発射光も出す。
     const ahead = k.radius + 150;
@@ -1689,7 +1714,7 @@ class Game {
     // アイテムボックス: カートの「先端」が触れたときだけ取得
     const boxR = this.track.tile * 0.66;
     for (const k of this.karts) {
-      if (k.finished || k.item || k.itemFlash > 0 || k.gone) continue;
+      if (k.finished || k.gone || k.itemFlash > 0 || (k.item && k.item2)) continue;   // 2ストックまで
       const nx = k.x + Math.cos(k.angle) * (k.radius + 12);   // 先端
       const ny = k.y + Math.sin(k.angle) * (k.radius + 12);
       for (const b of this.track.itemBoxes) {
@@ -2921,11 +2946,37 @@ class Game {
 
     // 持ちアイテム表示(各画面の上中央に大きく。取得直後は光る)。
     // タイムアタックは通常非表示だが、アイテムを持っている時(3つキノコ等)は表示する。
-    if (!timeMode || k.item) {
+    if (!timeMode || k.item || k.item2) {
       const bs = 70, cx = vp.x + vp.w / 2, ixc = cx - bs / 2, iyc = vp.y + 22;
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'alphabetic';
       ctx.fillText('アイテム', cx, iyc - 4);
+      // 2ストック目(NEXT): 小さめの枠を右隣に。持っているだけで、1つ目を使うまで使えない。
+      {
+        const ns = 44, nx = ixc + bs + 8, ny = iyc + bs - ns;
+        ctx.globalAlpha = k.item2 ? 1 : 0.5;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; this._roundRect(ctx, nx, ny, ns, ns, 9); ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = k.item2 ? 'rgba(255,210,63,0.75)' : 'rgba(255,255,255,0.18)';
+        this._roundRect(ctx, nx, ny, ns, ns, 9); ctx.stroke();
+        ctx.fillStyle = k.item2 ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)';
+        ctx.font = 'bold 9px sans-serif'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText('NEXT', nx + ns / 2, ny - 3);
+        if (k.item2) {
+          ctx.save();
+          ctx.translate(nx + ns / 2, ny + ns / 2 + 1); ctx.scale(0.62, 0.62);   // アイコンを小さく
+          this._drawItemIcon(ctx, k.item2, 0, 0);
+          ctx.restore();
+          if (k.itemCount2 > 1) {                        // 残り回数バッジ(3つキノコ)
+            const bx = nx + ns - 7, by = ny + 7;
+            ctx.fillStyle = '#e8412e'; ctx.beginPath(); ctx.arc(bx, by, 9, 0, TAU); ctx.fill();
+            ctx.lineWidth = 1.6; ctx.strokeStyle = '#fff'; ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'middle';
+            ctx.fillText('×' + k.itemCount2, bx, by + 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      }
       if (k.itemFlash > 0) {                         // 取得の瞬間に光る
         const a = Math.min(1, k.itemFlash / 0.6);
         ctx.save(); ctx.globalAlpha = a * 0.9;
@@ -2949,6 +3000,16 @@ class Game {
         }
       } else {
         ctx.fillStyle = 'rgba(255,255,255,0.22)'; this._drawSpark(ctx, cx, iyc + bs / 2, bs * 0.22); ctx.fill();
+      }
+      // 2ストック目が繰り上がった合図(NEXT枠から左へ流れる矢印)
+      if (k.itemShift > 0) {
+        const a = clamp(k.itemShift / 0.5, 0, 1);
+        const ax = ixc + bs + 8 - (1 - a) * 14, ay = iyc + bs - 22;
+        ctx.save();
+        ctx.globalAlpha = a; ctx.fillStyle = '#5ef2ff';
+        ctx.beginPath(); ctx.moveTo(ax - 9, ay); ctx.lineTo(ax + 3, ay - 7); ctx.lineTo(ax + 3, ay + 7);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
       }
     }
 
