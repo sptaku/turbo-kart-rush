@@ -81,6 +81,12 @@ for (const t of TRACKS) {
     if (d > wall + 0.05) errs.push(`${label}[${i}](${c},${r}) がコース外 (d=${d.toFixed(2)} > ${wall})`);
   });
   onCourse(t.items, 'item'); onCourse(t.boosts, 'boost'); onCourse(t.hazards, 'hazard');
+  onCourse((t.bolts || []).map((b) => [b.x, b.y]), 'bolt');   // 落雷地点も走路上にあること
+  // 落雷: 危険範囲(r)は道幅の半分より小さいこと(輪の外側を通って避けられる余地を残す)
+  (t.bolts || []).forEach((b, i) => {
+    if ((b.r || 2.4) >= t.roadHalf) errs.push(`bolt[${i}](${b.x},${b.y}) の半径 r=${b.r} が道幅の半分(${t.roadHalf})以上=避けられない`);
+    if (!(b.period > 0)) errs.push(`bolt[${i}] の period が不正 (${b.period})`);
+  });
 
   // 周回長の目安
   let len = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; len += Math.hypot(b.x - a.x, b.y - a.y); }

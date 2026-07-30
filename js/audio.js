@@ -484,6 +484,26 @@ class AudioSystem {
   sfxRescue() { this._sfx([300, 1000, 620], 0.45, 'sine', 0.4, true); }
   // グラップル・ダッシュ(発射→リール)
   sfxGrapple() { this._sfx([500, 1500], 0.12, 'square', 0.35, true); this._sfx([200, 1100], 0.4, 'sawtooth', 0.32, true); }
+  // ⚡落雷(直撃): 空気が裂ける高域ノイズ → 低く長い轟き。すべて合成音(オリジナル)。
+  sfxThunder(vol = 1) {
+    if (!this.ctx) this.init();
+    if (!this.ctx || !this.noiseBuf) return;
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource(); src.buffer = this.noiseBuf;
+    const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1700;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.5 * vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);       // バリッ!(裂ける瞬間)
+    src.connect(hp).connect(g).connect(this.sfxGain);
+    src.start(t); src.stop(t + 0.3);
+    this._sfxThud(0.6 * vol, 0.8, 240);                          // ゴロゴロ(低い轟き)
+    this._sfx([240, 45], 0.55, 'sawtooth', 0.3 * vol, true);      // 落ちる感じの下降音
+  }
+  // ⚡予兆(遠雷): 落ちる少し前に低く鳴る。近いほど大きい。
+  sfxThunderWarn(vol = 1) {
+    if (!this.ctx) return;
+    this._sfxThud(0.3 * vol, 0.5, 150);
+  }
   sfxGo()       { this._sfx([523, 784, 1047], 0.5, 'square', 0.45, true); }
   sfxBomb()     { if (!this.ctx) this.init(); this._noise(this.ctx.currentTime, 0.4, 200, 0.5); this._sfx([200, 40], 0.4, 'sawtooth', 0.4, true); }
   sfxFinish()   {

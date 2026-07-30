@@ -21,6 +21,11 @@ const NUM_GEARS = 5;
 const KMH_PER_PX = 0.32;   // 表示用(px/s → km/h)
 const HUMAN_BASE = 610;    // 人間の最高速(基準)
 const JUMP_GRAV = 680;     // ジャンプの重力(高さの減速)
+// ⚡落雷(スコール)ギミック: 直撃は大ダメージだが、単発では倒れない(下限を残す)ので
+//    レースが破綻しない。倍率(自分/CPU)は通常どおり掛かる。
+const BOLT_DMG = 45;       // 直撃のダメージ(倍率適用前)
+const BOLT_MIN_LIFE = 0.15; // 直撃後に必ず残るライフ(最大値比) = 落雷だけでは撃墜されない
+const BOLT_STRIKE = 0.34;  // 落雷の見た目の長さ(秒)。判定は落ちた瞬間のみ
 // CPUの強さ4段階(speed=最高速倍率, item=アイテム使用間隔の倍率(小さいほど多用))
 const AI_DIFF = {
   weak:   { speed: 0.80, item: 1.9, label: '弱い' },
@@ -158,6 +163,14 @@ class Track {
       const L = Math.hypot(dx, dy) || 1;
       const bx = c * this.tile, by = r * this.tile;
       return { bx, by, dx: dx / L, dy: dy / L, range: (w.range || 3) * this.tile, speed: w.speed || 2, phase: w.phase || 0, cx: bx, cy: by, r: this.tile * 0.42, kind: w.kind || 'ball' };
+    });
+    // 落雷(サンダー): 決まった地点に周期的に落ちる。予兆(暗雲＋光る輪)→落雷。
+    //   判定は「落ちた瞬間に輪の中に居たか」だけ(通り抜け中ずっと危険ではない)。
+    this.bolts = (def.bolts || []).map((b) => {
+      const [c, r] = M([b.x, b.y]);
+      return { x: c * this.tile, y: r * this.tile, r: (b.r || 2.4) * this.tile,
+        period: b.period || 4.4, phase: b.phase || 0, warn: b.warn || 1.25,
+        warnT: -1, strikeT: 0, fired: -1, warned: -1, seed: 0 };
     });
     // ミニマップが切れないよう、分岐路/ワープ点も表示範囲(bounds)に含める
     const mg2 = this.tile * 2;
@@ -588,7 +601,8 @@ class Kart {
   }
 
   // ダメージを与える。無敵(スター/復帰/ダッシュ)中・爆発中は無効。0以下で爆発。
-  hurt(amount, game) {
+  //   minLife を渡すと「そこまでしか減らない」= 一撃では倒れない(落雷など大ダメージ用)。
+  hurt(amount, game, minLife) {
     if (!game.lifeOn || this.gone || this.invincTimer > 0 || this.dashTimer > 0 || this.finished) return;
     let scale;
     if (this.isHuman) scale = game.playerDamageScale;
@@ -596,7 +610,8 @@ class Kart {
       if (this._cpuDmgScale == null) this._cpuDmgScale = game._rollCpuDmg(game.cpuDamageRandom);
       scale = this._cpuDmgScale;
     } else scale = game.cpuDamageScale;
-    const dmg = amount * (scale != null ? scale : 1);
+    let dmg = amount * (scale != null ? scale : 1);
+    if (minLife != null) dmg = Math.min(dmg, Math.max(0, this.life - minLife));  // 下限まで(倒しきらない)
     if (dmg <= 0) return;                                                       // ダメージなし(0倍/無敵CPU)
     this.life -= dmg;
     this.hurtFlash = Math.min(0.5, this.hurtFlash + 0.16);
@@ -917,6 +932,22 @@ class Kart {
     else if (sp > targetSpeed) throttle = 0.35;        // 緩める
     // 芝生に出たら戻すため強めに切る
     if (T.surfaceAt(this.x, this.y) === 'grass') { throttle = Math.max(throttle, 0.6); steer = clamp(diff * 2.3, -1, 1); }
+    // 落雷の回避: 予兆が出ている輪について「落ちる瞬間に自分が輪の中に居るか」を予測し、
+    //   居そうなら手前で減速して見送る(既に輪の中なら全開で走り抜ける)。
+    //   CPUも避けられるようにしておかないと、雷だけでCPUが次々脱落してレースが成立しない。
+    if (T.bolts && T.bolts.length && !this.finished) {
+      const sp2 = Math.max(60, sp);
+      for (const b of T.bolts) {
+        if (b.warnT < 0) continue;
+        const rem = (1 - b.warnT) * b.warn;                       // 落ちるまでの残り時間
+        const d = Math.hypot(b.x - this.x, b.y - this.y);
+        const danger = b.r + this.radius;
+        if (d < danger) { throttle = 1; break; }                   // もう中に居る→加速して脱出
+        const toward = ((b.x - this.x) * Math.cos(this.angle) + (b.y - this.y) * Math.sin(this.angle)) > 0;
+        if (!toward) continue;                                     // 後方の雷は無視
+        if (rem > (d - danger) / sp2 && rem < (d + danger) / sp2) { throttle = -0.5; break; }  // 手前で待つ
+      }
+    }
     const drift = sharp > 0.5 && sp > 260 && throttle > 0;
 
     // アイテム使用判断(難易度でアイテム多用)
@@ -1139,6 +1170,7 @@ class Game {
     this.explosions = [];
     this.slowTimer = 0;
     this.slowOwner = null;
+    this._boltFlash = 0;            // 落雷の閃光(近くに落ちたときだけ画面が白く光る)
     this._bumpCd = 0;
     this._finished = false;
 
@@ -1291,6 +1323,10 @@ class Game {
     // 順位
     this._ranking();
 
+    // 落雷(スコール)
+    this._updateBolts();
+    if (this._boltFlash > 0) this._boltFlash = Math.max(0, this._boltFlash - dt * 2.4);
+
     // ゴースト(タイムアタック): 自分の走りを記録しつつ、前回ベストの軌跡を再生する
     if (this.state === 'racing' || this.state === 'finished') {
       const me = this.humans[0];
@@ -1334,6 +1370,53 @@ class Game {
       eSr = Math.max(eSr, Math.min(1, Math.abs(h.speed) / h.baseMax));
     }
     audio.updateEngine(eThr, eSr);
+  }
+
+  // ---- 落雷(スコール) ---------------------------------------------------
+  // 各地点は period 秒周期で「予兆(warn秒) → 落雷(BOLT_STRIKE秒)」を繰り返す。
+  // 判定は落ちた瞬間だけ。予兆の間に輪から出れば当たらない(タイミング or 外側を通る)。
+  _updateBolts() {
+    const B = this.track.bolts;
+    if (!B || !B.length) return;
+    const live = (this.state === 'racing' || this.state === 'finished');
+    for (const b of B) {
+      if (!live) { b.warnT = -1; b.strikeT = 0; continue; }
+      const cyc = (this.raceTime + b.phase) / b.period;
+      const idx = Math.floor(cyc);
+      const t = (cyc - idx) * b.period;
+      b.warnT = t < b.warn ? t / b.warn : -1;                                    // 0→1 で予兆が強まる
+      b.strikeT = (t >= b.warn && t < b.warn + BOLT_STRIKE) ? (1 - (t - b.warn) / BOLT_STRIKE) : 0;
+      if (b.warnT >= 0 && b.warned !== idx) {                                    // 予兆の開始(遠雷)
+        b.warned = idx;
+        const near = this._nearHuman(b.x, b.y);
+        if (near < this.track.tile * 15) audio.sfxThunderWarn(clamp(1 - near / (this.track.tile * 15), 0.15, 1));
+      }
+      if (b.strikeT > 0 && b.fired !== idx) { b.fired = idx; b.seed = idx * 2.39; this._strikeBolt(b); }
+    }
+  }
+  // 落雷の瞬間: 輪の中のカートに大ダメージ＋スピン。ただし minLife を残すので
+  // 「落雷だけで撃墜される」ことは無い(レースが破綻しない大ダメージ)。
+  _strikeBolt(b) {
+    const R2 = b.r * b.r;
+    for (const k of this.karts) {
+      if (k.gone || k.finished || k.invincTimer > 0 || k.dashTimer > 0) continue;
+      if (dist2(k.x, k.y, b.x, b.y) > R2) continue;                              // 空中(ジャンプ中)でも直撃する
+      k.hurt(BOLT_DMG, this, k.maxLife * BOLT_MIN_LIFE);
+      k.startSpin();
+      k.hurtFlash = Math.min(0.6, k.hurtFlash + 0.45);
+      k.hurtCd = Math.max(k.hurtCd, 0.4);
+      k.bumpTimer = Math.max(k.bumpTimer, 0.5);                                  // 画面が大きく揺れる
+      k.boostTimer = 0;                                                          // ブーストは消し飛ぶ
+      k.speed *= 0.5;
+      for (let p = 0; p < 8; p++) this.spawnParticle(k.x, k.y, p % 2 ? '#fffbe0' : '#bfe9ff', 'spark');
+    }
+    for (let p = 0; p < 16; p++) this.spawnParticle(b.x, b.y, p % 3 ? '#fffbe0' : '#a8e6ff', 'star');
+    const near = this._nearHuman(b.x, b.y);
+    const audible = this.track.tile * 30;
+    if (near < audible) {
+      audio.sfxThunder(clamp(1 - near / audible, 0.2, 1));
+      this._boltFlash = Math.max(this._boltFlash, clamp(1 - near / (this.track.tile * 16), 0, 1));
+    }
   }
 
   _readHuman(k) {
@@ -2069,6 +2152,7 @@ class Game {
     for (const b of T.itemBoxes) if (b.active) add(b.x, b.y, (c, P) => this._spItemBox(c, P));
     for (const o of this.obstacles) add(o.x, o.y, (c, P) => this._spBanana(c, P));
     for (const m of T.movers) add(m.cx, m.cy, (c, P) => this._spMover(c, P, m));
+    for (const bl of T.bolts) if (bl.warnT >= 0 || bl.strikeT > 0) add(bl.x, bl.y, (c, P) => this._spBolt(c, P, bl, vp));
     for (const pj of this.projectiles) add(pj.x, pj.y, (c, P) => this._spProjectile(c, P, pj));
     for (const ex of this.explosions) add(ex.x, ex.y, (c, P) => this._spExplosion(c, P, ex));
     for (const pa of this.particles) add(pa.x, pa.y, (c, P) => this._spParticle(c, P, pa));
@@ -2110,6 +2194,13 @@ class Game {
       ctx.restore();
     }
 
+    // 落雷の閃光(近くに落ちた瞬間だけ画面全体が白く光る)
+    if (this._boltFlash > 0) {
+      ctx.globalAlpha = Math.min(0.6, this._boltFlash * 0.6);
+      ctx.fillStyle = '#eaf6ff';
+      ctx.fillRect(vp.x, vp.y, vw, vh);
+      ctx.globalAlpha = 1;
+    }
     // 衝突の白フラッシュ
     if (k.bumpTimer > 0) {
       ctx.globalAlpha = Math.min(1, k.bumpTimer / 0.38) * 0.32;
@@ -2161,6 +2252,73 @@ class Game {
       ctx.fillRect(bx, by, bw * r, 3);
     }
   }
+  // ⚡落雷: 予兆(暗雲＋光る輪)→ 落雷(ジグザグの稲妻＋着弾の閃光)。
+  //    輪 = 危険範囲。落ちる瞬間に輪の中に居なければ当たらないので、輪を見て避ける。
+  _spBolt(ctx, P, b, vp) {
+    const R = clamp(b.r * P.scale, 5, 900);        // 危険範囲の見た目の半径
+    ctx.save();
+    if (b.warnT >= 0) {
+      const w = b.warnT;                            // 0→1(落ちる直前ほど強く光る)
+      const pulse = 0.55 + 0.45 * Math.abs(Math.sin(this.time * (6 + w * 18)));
+      const hot = w > 0.6 ? '#ff8a2a' : '#ffe24d';     // 落ちる直前はオレンジに変わる
+      // 危険範囲(この輪の中に居ると直撃)
+      ctx.globalAlpha = (0.2 + 0.3 * w) * pulse;
+      ctx.fillStyle = hot;
+      ctx.beginPath(); ctx.ellipse(P.sx, P.sy, R, R * 0.34, 0, 0, TAU); ctx.fill();
+      ctx.globalAlpha = (0.65 + 0.35 * w) * pulse;
+      ctx.strokeStyle = hot; ctx.lineWidth = Math.max(2.5, R * 0.11);
+      ctx.beginPath(); ctx.ellipse(P.sx, P.sy, R, R * 0.34, 0, 0, TAU); ctx.stroke();
+      // 収縮するガイド輪(落下タイミングが読める)
+      ctx.globalAlpha = 0.5 + 0.4 * w;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, R * 0.05);
+      ctx.beginPath(); ctx.ellipse(P.sx, P.sy, R * (1.9 - w * 0.9), R * 0.34 * (1.9 - w * 0.9), 0, 0, TAU); ctx.stroke();
+      // 頭上の暗雲(チカチカ光る)
+      const cy = P.sy - R * 1.7, cw = R * 1.35;
+      ctx.globalAlpha = 0.42 + 0.22 * w;
+      ctx.fillStyle = '#39465e';
+      ctx.beginPath();
+      ctx.ellipse(P.sx, cy, cw, cw * 0.26, 0, 0, TAU);
+      ctx.ellipse(P.sx - cw * 0.45, cy + cw * 0.08, cw * 0.5, cw * 0.2, 0, 0, TAU);
+      ctx.ellipse(P.sx + cw * 0.45, cy + cw * 0.06, cw * 0.45, cw * 0.18, 0, 0, TAU);
+      ctx.fill();
+      if (Math.sin(this.time * 22 + b.seed) > 0.55) {     // 雲の内側で光る
+        ctx.globalAlpha = 0.55 * (0.4 + 0.6 * w);
+        ctx.fillStyle = '#dcefff';
+        ctx.beginPath(); ctx.ellipse(P.sx, cy, cw * 0.55, cw * 0.16, 0, 0, TAU); ctx.fill();
+      }
+    }
+    if (b.strikeT > 0) {
+      const a = b.strikeT;                            // 1→0 でフェード
+      const top = Math.max(vp.y - 10, P.sy - R * 9);   // 雲(高いところ)から地面へ
+      const segs = 10, pts = [];
+      for (let i = 0; i <= segs; i++) {
+        const f = i / segs;
+        const j = (i === 0 || i === segs) ? 0 : Math.sin(b.seed + i * 2.7) * R * 0.3 * (1 - f * 0.4);
+        pts.push([P.sx + j, lerp(top, P.sy, f)]);
+      }
+      const stroke = (w, col, al) => {
+        ctx.globalAlpha = al * a; ctx.strokeStyle = col; ctx.lineWidth = w;
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i <= segs; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.stroke();
+      };
+      stroke(clamp(R * 0.16, 7, 34), '#8ad6ff', 0.45);   // 外側の輝き
+      stroke(clamp(R * 0.07, 3, 15), '#dff3ff', 0.85);
+      stroke(clamp(R * 0.028, 1.5, 6), '#ffffff', 1);    // 白い芯
+      // 着弾の閃光(地面で弾ける)
+      const g = ctx.createRadialGradient(P.sx, P.sy, 0, P.sx, P.sy, R * 1.6);
+      g.addColorStop(0, `rgba(255,255,255,${0.85 * a})`);
+      g.addColorStop(0.4, `rgba(180,230,255,${0.5 * a})`);
+      g.addColorStop(1, 'rgba(140,200,255,0)');
+      ctx.globalAlpha = 1; ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(P.sx, P.sy, R * 1.6, R * 0.6, 0, 0, TAU); ctx.fill();
+      ctx.globalAlpha = a; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(2, R * 0.08);
+      ctx.beginPath(); ctx.ellipse(P.sx, P.sy, R * (1 + (1 - a) * 0.8), R * 0.34 * (1 + (1 - a) * 0.8), 0, 0, TAU); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // ゴースト(自己ベストの再生): 半透明のカート＋足元の淡い光。触れてもすり抜ける。
   _spGhost(ctx, P) {
     const g = this.ghost, sc = clamp(P.scale * 96, 12, 320);
@@ -2912,6 +3070,18 @@ class Game {
         const dot = Math.max(2.5, mw * 0.05);
         ctx.fillStyle = '#ff4dd2'; ctx.beginPath(); ctx.arc(sx(w.ex), sy(w.ey), dot, 0, TAU); ctx.fill();
         ctx.fillStyle = '#7df0ff'; ctx.beginPath(); ctx.arc(sx(w.tx), sy(w.ty), dot, 0, TAU); ctx.fill();
+      }
+    }
+    // 落雷ポイント(あれば): 予兆で黄色く光り、落ちる瞬間に白く弾ける
+    if (T.bolts && T.bolts.length) {
+      for (const b of T.bolts) {
+        const dot = Math.max(2.5, mw * 0.045);
+        const st = b.strikeT > 0, wn = b.warnT >= 0;
+        ctx.globalAlpha = st ? 1 : (wn ? 0.6 + 0.4 * b.warnT : 0.45);
+        ctx.fillStyle = st ? '#ffffff' : (wn ? '#fff2a0' : '#8f7a2a');
+        ctx.beginPath(); ctx.arc(sx(b.x), sy(b.y), dot * (st ? 1.7 : 1), 0, TAU); ctx.fill();
+        ctx.strokeStyle = '#20232c'; ctx.lineWidth = 1.4; ctx.stroke();   // 分岐路(黄)と区別する縁
+        ctx.globalAlpha = 1;
       }
     }
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';   // 以降の描画用に本線色へ戻す

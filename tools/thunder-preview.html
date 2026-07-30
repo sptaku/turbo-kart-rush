@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>thunder preview</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}#game{display:block}#shot{position:absolute;left:0;top:0}</style>
+</head><body>
+<canvas id="game"></canvas>
+<!-- headless では #game canvas が合成されず黒くなることがあるため、描画結果を img に写して撮影する -->
+<img id="shot">
+<script src="../js/tracks.js"></script>
+<script src="../js/audio.js"></script>
+<script src="../js/input.js"></script>
+<script src="../js/game.js"></script>
+<script>
+  // ⚡落雷(リオ)の見た目確認用。
+  //   ?bolt=0 何番目の落雷地点か / ?phase=warn|strike 予兆 or 落雷 / ?dist=520 手前からの距離(px)
+  const q = new URLSearchParams(location.search);
+  const bi = parseInt(q.get('bolt') || '0', 10);
+  const phase = q.get('phase') || 'strike';
+  const dist = parseFloat(q.get('dist') || '520');
+  audio.init = () => {}; audio.resume = () => {}; audio.playMusic = () => {}; audio.startEngine = () => {};
+
+  const trackIndex = TRACKS.findIndex((t) => t.id === 'rio');
+  const g = new Game(document.getElementById('game'));
+  g.onFinish = () => {};
+  g.startRace({ mode: 'time', trackIndex, players: 1, numKarts: 1, lifeOn: false });
+  g.stop();                                     // rAFループは止めて手動で描画(撮影用)
+  g.state = 'racing'; g.countdown = 0; g.hintTimer = 0;
+
+  const b = g.track.bolts[bi];
+  // 落雷サイクルの狙った位相へ(予兆の途中 or 落ちた直後)
+  g.raceTime = b.period + (phase === 'warn' ? b.warn * 0.75 : b.warn + 0.06) - b.phase;
+  g._updateBolts();
+
+  // 自機を落雷地点の手前(コースの進行方向で手前側)に置いて、落雷を正面に見る
+  const seg = g.track._distInfo(b.x, b.y).i;
+  const ang = g.track._pathDir(seg);
+  const me = g.humans[0];
+  me.x = b.x - Math.cos(ang) * dist;
+  me.y = b.y - Math.sin(ang) * dist;
+  me.angle = ang; me.speed = 430; me.lapCount = 1;
+  g.render();
+  document.getElementById('shot').src = document.getElementById('game').toDataURL();
+  window.__ready = true;
+</script>
+</body></html>
