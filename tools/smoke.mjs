@@ -58,7 +58,7 @@ for (let ti = 0; ti < TRACKS.length; ti++) {
     game.startRace({ trackIndex: ti, players, lifeOn: false });
 
     // 全アイテム種を強制使用して各コードパスを踏む
-    const forceItems = ['mushroom', 'star', 'banana', 'green', 'red', 'bomb', 'grapple'];
+    const forceItems = ['mushroom', 'mushroom3', 'goldshroom', 'star', 'banana', 'green', 'red', 'bomb', 'grapple'];
     const step = (dt) => { nowMs += dt * 1000; game.update(dt); game.render(); };
 
     // カウントダウンを消化

@@ -504,6 +504,12 @@ class AudioSystem {
     if (!this.ctx) return;
     this._sfxThud(0.3 * vol, 0.5, 150);
   }
+  // 🍄✨金キノコの発動(きらびやかな上昇＋高音の余韻)
+  sfxGold() {
+    if (!this.ctx) return;
+    this._sfx([784, 1175, 1568, 2093], 0.42, 'triangle', 0.4, true);
+    this._sfx([1568, 2637], 0.3, 'square', 0.18, true);
+  }
   sfxGo()       { this._sfx([523, 784, 1047], 0.5, 'square', 0.45, true); }
   sfxBomb()     { if (!this.ctx) this.init(); this._noise(this.ctx.currentTime, 0.4, 200, 0.5); this._sfx([200, 40], 0.4, 'sawtooth', 0.4, true); }
   sfxFinish()   {

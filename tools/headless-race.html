@@ -95,6 +95,7 @@
     me.item = q.get('item') || null; me.itemCount = me.item === 'mushroom3' ? 3 : (me.item ? 1 : 0);
     me.item2 = q.get('item2') || null; me.itemCount2 = me.item2 === 'mushroom3' ? 3 : (me.item2 ? 1 : 0);
     me.itemFlash = 0; me.itemShift = 0;
+    me.goldTimer = parseFloat(q.get('gold') || '0');   // 金キノコ発動中の表示確認(?gold=4.2)
     g.state = 'racing'; g.countdown = 0; g.hintTimer = 0;
     g.stop();                  // rAFループを止めて1コマだけ描く(撮影用)
     g.render();

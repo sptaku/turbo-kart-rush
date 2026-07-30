@@ -85,8 +85,14 @@ const RACERS = [
 const ITEMS = ['banana', 'green', 'red', 'mushroom', 'star', 'bomb', 'grapple'];
 const ITEM_LABEL = {
   banana: 'バナナ', green: 'グリーンボール', red: 'レッドボール',
-  mushroom: 'キノコ', mushroom3: '3つキノコ', star: 'スター', bomb: 'ボムへい', grapple: 'グラップル',
+  mushroom: 'キノコ', mushroom3: '3つキノコ', goldshroom: '金キノコ',
+  star: 'スター', bomb: 'ボムへい', grapple: 'グラップル',
 };
+// 金キノコ: 発動から GOLD_TIME 秒のあいだ「押すたびに何度でも」ダッシュできる逆転アイテム。
+//   アイテム枠は時間切れまで残り、切れると自動で消えて2ストック目が繰り上がる。
+const GOLD_TIME = 7.5;     // 使える時間(秒)
+const GOLD_BOOST = 1.1;    // 1回の押下で得るブーストの長さ(押し続ければ継続する)
+const GOLD_CD = 0.16;      // 連打の間隔(音と処理の間引き)
 
 // ============================ Track =======================================
 class Track {
@@ -570,6 +576,8 @@ class Kart {
     this.assist = false;                       // 1人プレイ時の操作アシスト
 
     this.boostTimer = 0;
+    this.goldTimer = 0;     // 金キノコの残り時間(この間は何度でもダッシュできる)
+    this.goldCd = 0;        // 金キノコの連打間隔
     this.invincTimer = 0;   // スター
     this.spinTimer = 0;     // スピンアウト
     this.spinAngle = 0;
@@ -641,6 +649,15 @@ class Kart {
     if (this.dropImmune > 0) this.dropImmune -= dt;
     if (this.itemFlash > 0) this.itemFlash -= dt;
     if (this.itemShift > 0) this.itemShift -= dt;
+    if (this.goldCd > 0) this.goldCd -= dt;
+    // 金キノコ: 時間切れでアイテム枠から消え、2ストック目が繰り上がる
+    if (this.goldTimer > 0) {
+      this.goldTimer -= dt;
+      if (this.goldTimer <= 0) {
+        this.goldTimer = 0;
+        if (this.item === 'goldshroom') { this.item = null; this.itemCount = 0; game._shiftItem(this); }
+      }
+    }
     if (this.bumpTimer > 0) this.bumpTimer -= dt;
     if (this.wallHitCd > 0) this.wallHitCd -= dt;
     if (this.rescueFlash > 0) this.rescueFlash -= dt;
@@ -868,6 +885,8 @@ class Kart {
 
     if (this.boostTimer > 0 && Math.random() < 0.5)
       game.spawnParticle(this.x - Math.cos(this.angle) * 16, this.y - Math.sin(this.angle) * 16, '#ffb020', 'boost');
+    if (this.goldTimer > 0 && Math.random() < 0.5)   // 金キノコ発動中は金色にきらめく
+      game.spawnParticle(this.x + (Math.random() - 0.5) * 26, this.y + (Math.random() - 0.5) * 26, Math.random() < 0.5 ? '#ffd23f' : '#fff3b0', 'star');
     if (this.invincTimer > 0 && Math.random() < 0.6)
       game.spawnParticle(this.x + (Math.random() - 0.5) * 30, this.y + (Math.random() - 0.5) * 30,
         `hsl(${(game.time * 360) % 360},90%,60%)`, 'star');
@@ -966,6 +985,8 @@ class Kart {
     if (this.item && !this.finished) {
       this.aiItemTimer -= 1 / 60;
       if (this.aiItemTimer <= 0) { useItem = true; this.aiItemTimer = (1.5 + Math.random() * 2.5) * (this.aiItemMul || 1); }
+      // 金キノコ発動中は連打して加速し続ける(CPUも金キノコを使いこなす)
+      if (this.goldTimer > 0) useItem = true;
     }
     this.control = { throttle, steer, drift, item: useItem };
   }
@@ -1594,8 +1615,8 @@ class Game {
     const place = k.place;
     let pool;
     if (place === 1) pool = ['banana', 'banana', 'green', 'green', 'mushroom', 'red'];
-    else if (place === 2) pool = ['green', 'red', 'mushroom', 'mushroom', 'banana', 'grapple', 'bomb', 'mushroom3'];
-    else pool = ['mushroom', 'red', 'star', 'grapple', 'grapple', 'bomb', 'star', 'mushroom3'];
+    else if (place === 2) pool = ['green', 'red', 'mushroom', 'mushroom', 'banana', 'grapple', 'bomb', 'mushroom3', 'goldshroom'];
+    else pool = ['mushroom', 'red', 'star', 'grapple', 'grapple', 'bomb', 'star', 'mushroom3', 'goldshroom', 'goldshroom'];
     const type = pool[Math.floor(Math.random() * pool.length)];
     const cnt = (type === 'mushroom3') ? 3 : 1;         // 3つキノコは3回使える
     if (!k.item) { k.item = type; k.itemCount = cnt; }  // 1ストック目が空ならそこへ
@@ -1614,6 +1635,16 @@ class Game {
   // 使えるのは1ストック目だけ(2ストック目は持っているだけ)
   useItem(k) {
     const type = k.item; if (!type) return;
+    // 金キノコ: 発動から GOLD_TIME 秒のあいだ「押すたびに何度でも」ダッシュできる。
+    //   アイテム枠は時間切れまで残る(消費されない)＝連打して加速し続けるのが正しい使い方。
+    if (type === 'goldshroom') {
+      if (k.goldCd > 0) return;                          // 連打の間引き
+      k.goldCd = GOLD_CD;
+      if (k.goldTimer <= 0) { k.goldTimer = GOLD_TIME; audio.sfxGold(); }   // 初回=発動
+      k.boostTimer = Math.max(k.boostTimer, GOLD_BOOST);
+      audio.sfxBoost();
+      return;
+    }
     // 3つキノコ: キノコ効果を出して残り回数を1減らす(0で使い切り)
     if (type === 'mushroom3') {
       k.boostTimer = Math.max(k.boostTimer, 1.4); audio.sfxBoost();
@@ -2991,7 +3022,16 @@ class Game {
         this._drawItemIcon(ctx, k.item, cx, iyc + bs / 2 - 7);
         ctx.fillStyle = '#ffe680'; ctx.font = 'bold 12px sans-serif'; ctx.textBaseline = 'middle';
         ctx.fillText(ITEM_LABEL[k.item] || '', cx, iyc + bs - 13);
-        if (k.itemCount > 1) {                         // 残り回数バッジ(3つキノコ)
+        if (k.item === 'goldshroom' && k.goldTimer > 0) {   // 金キノコ: 残り時間バッジ＋連打をうながす
+          const bx = ixc + bs - 9, by = iyc + 9;
+          ctx.fillStyle = '#c9920a'; ctx.beginPath(); ctx.arc(bx, by, 13, 0, TAU); ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = '#fff3b0'; ctx.stroke();
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textBaseline = 'middle';
+          ctx.fillText(k.goldTimer.toFixed(1), bx, by + 1);
+          ctx.fillStyle = `rgba(255,226,77,${0.55 + 0.45 * Math.abs(Math.sin(this.time * 9))})`;
+          ctx.font = 'bold 12px sans-serif';
+          ctx.fillText('連打で加速！', cx, iyc + bs + 12);
+        } else if (k.itemCount > 1) {                  // 残り回数バッジ(3つキノコ)
           const bx = ixc + bs - 9, by = iyc + 9;
           ctx.fillStyle = '#e8412e'; ctx.beginPath(); ctx.arc(bx, by, 12, 0, TAU); ctx.fill();
           ctx.fillStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
@@ -3171,6 +3211,15 @@ class Game {
   _drawItemIcon(ctx, type, cx, cy) {
     ctx.save(); ctx.translate(cx, cy);
     switch (type) {
+      case 'goldshroom': {   // 金キノコ(金色のカサ＋きらめき)
+        const g = ctx.createLinearGradient(0, -17, 0, 10);
+        g.addColorStop(0, '#fff3b0'); g.addColorStop(0.5, '#ffcf2a'); g.addColorStop(1, '#c9920a');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -2, 15, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(-6, -6, 3, 0, TAU); ctx.arc(6, -4, 3, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#f6e7b8'; ctx.fillRect(-7, -2, 14, 12);
+        ctx.fillStyle = '#fffbe0'; this._drawSpark(ctx, 12, -13, 6); ctx.fill();   // きらめき
+        break;
+      }
       case 'mushroom3':   // 3つキノコもキノコの絵(残り回数はHUDのバッジで表示)
       case 'mushroom':
         ctx.fillStyle = '#e8412e'; ctx.beginPath(); ctx.arc(0, -2, 15, Math.PI, 0); ctx.fill();
