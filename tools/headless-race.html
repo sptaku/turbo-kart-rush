@@ -89,11 +89,15 @@
     g.update(1 / 60);          // 衝突を発生させる
     g.update = () => {};        // 以降フリーズして演出を保持
   }
-  // 検証用: アイテムの2ストック表示(?item=star&item2=mushroom3 のように指定)
-  if (q.get('item') || q.get('item2')) {
+  // 検証用: アイテムのストック表示(?item=star&item2=mushroom3&item3=banana&slots=3)
+  if (q.get('item') || q.get('item2') || q.get('item3')) {
     const me = g.humans[0];
-    me.item = q.get('item') || null; me.itemCount = me.item === 'mushroom3' ? 3 : (me.item ? 1 : 0);
-    me.item2 = q.get('item2') || null; me.itemCount2 = me.item2 === 'mushroom3' ? 3 : (me.item2 ? 1 : 0);
+    me.maxStock = parseInt(q.get('slots') || '0', 10) || me.maxStock;
+    me.clearItems();
+    for (const key of ['item', 'item2', 'item3']) {
+      const ty = q.get(key);
+      if (ty) me.addItem(ty, ty === 'mushroom3' ? 3 : 1);
+    }
     me.itemFlash = 0; me.itemShift = 0;
     me.goldTimer = parseFloat(q.get('gold') || '0');   // 金キノコ発動中の表示確認(?gold=4.2)
     g.state = 'racing'; g.countdown = 0; g.hintTimer = 0;

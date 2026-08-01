@@ -93,6 +93,8 @@ const ITEM_LABEL = {
 const GOLD_TIME = 7.5;     // 使える時間(秒)
 const GOLD_BOOST = 1.1;    // 1回の押下で得るブーストの長さ(押し続ければ継続する)
 const GOLD_CD = 0.16;      // 連打の間隔(音と処理の間引き)
+// アイテムを持てる数(ストック)。タイトルの設定で 1〜3 を選べる(既定2)。
+const ITEM_STOCK_MIN = 1, ITEM_STOCK_MAX = 3, ITEM_STOCK_DEFAULT = 2;
 
 // ============================ Track =======================================
 class Track {
@@ -586,14 +588,12 @@ class Kart {
     this.driftDir = 0;
     this.driftCharge = 0;
 
-    // アイテムは2ストック。使えるのは1ストック目(item)だけで、2ストック目(item2)は
-    // 「持っているだけ」。1ストック目を使い切ると2ストック目が1ストック目へ繰り上がる。
-    this.item = null;
-    this.itemCount = 0;     // 複数回使えるアイテム(3つキノコ)の残り回数
-    this.item2 = null;      // 2ストック目(まだ使えない)
-    this.itemCount2 = 0;
+    // アイテムのストック(先頭=1ストック目だけが使える。以降は「持っているだけ」)。
+    // 1ストック目を使い切ると後ろが1つずつ繰り上がる。持てる数は maxStock(1〜3)。
+    this.stock = [];        // [{ type, count }, ...] 先頭が1ストック目
+    this.maxStock = ITEM_STOCK_DEFAULT;
     this.itemFlash = 0;
-    this.itemShift = 0;     // 2ストック目が繰り上がった演出
+    this.itemShift = 0;     // 後ろのストックが繰り上がった演出
     this.dropImmune = 0;    // 自分が置いたバナナへの一時無敵
 
     // 周回管理(中心線上の連続位置で判定)
@@ -635,6 +635,24 @@ class Kart {
     if (this.life <= 0) { this.life = 0; game.explodeKart(this); }
   }
 
+  // ---- アイテムのストック操作 ------------------------------------------
+  // item / itemCount は「1ストック目」への別名(既存コード・表示との互換用)。
+  get item() { return this.stock[0] ? this.stock[0].type : null; }
+  get itemCount() { return this.stock[0] ? this.stock[0].count : 0; }
+  set item(v) {                                    // null 代入 = 1ストック目を捨てる(後ろが繰り上がる)
+    if (v == null) { this.stock.shift(); return; }
+    if (this.stock[0]) this.stock[0].type = v;
+    else this.stock.unshift({ type: v, count: 1 });
+  }
+  set itemCount(v) { if (this.stock[0]) this.stock[0].count = v; }
+  get itemFull() { return this.stock.length >= this.maxStock; }   // これ以上持てない
+  addItem(type, count) {                           // 空いている後ろのストックへ入れる
+    if (this.itemFull || !type) return false;
+    this.stock.push({ type, count: count == null ? 1 : count });
+    return true;
+  }
+  clearItems() { this.stock.length = 0; }
+
   get gone() { return this._exploded || this._retired; }   // レースから外れた(爆発/リタイヤ)
   get radius() { return 30; }       // 壁(レール)用の半径
   get bodyR() { return 76; }        // カート同士の当たり判定(疑似3Dで大きく描画される見た目に合わせて広め)
@@ -655,7 +673,7 @@ class Kart {
       this.goldTimer -= dt;
       if (this.goldTimer <= 0) {
         this.goldTimer = 0;
-        if (this.item === 'goldshroom') { this.item = null; this.itemCount = 0; game._shiftItem(this); }
+        if (this.item === 'goldshroom') game._shiftItem(this);   // 時間切れ=枠から消えて繰り上がる
       }
     }
     if (this.bumpTimer > 0) this.bumpTimer -= dt;
@@ -1208,7 +1226,10 @@ class Game {
 
     this.finishOrder = [];
 
+    // アイテムを持てる数(ストック 1〜3。既定2)。全カート共通。
+    this.itemSlots = clamp(Math.round(opts.itemSlots || ITEM_STOCK_DEFAULT), ITEM_STOCK_MIN, ITEM_STOCK_MAX);
     this._placeKarts(total);
+    for (const k of this.karts) k.maxStock = this.itemSlots;
     this.humans = this.karts.filter(k => k.isHuman);
     // 前のステージでリタイヤしたCPUを引き継ぐ(復活させない設定の場合)
     if (opts.retiredIds && opts.retiredIds.length) {
@@ -1233,7 +1254,7 @@ class Game {
     if (this.noItems) this.track.itemBoxes = [];   // アイテムボックスを消す
     // 開始時アイテム(タイムアタックで「3つキノコ」を最初から持つ等)。プレイヤーに付与。
     if (opts.startItem) {
-      for (const k of this.humans) { k.item = opts.startItem; k.itemCount = (opts.startItem === 'mushroom3') ? 3 : 1; }
+      for (const k of this.humans) { k.clearItems(); k.addItem(opts.startItem, (opts.startItem === 'mushroom3') ? 3 : 1); }
     }
 
     audio.resume();
@@ -1608,9 +1629,9 @@ class Game {
   }
 
   // ---- アイテム ---------------------------------------------------------
-  // アイテムは2ストックまで持てる。空いている方から順に入る(1ストック目→2ストック目)。
+  // アイテムは maxStock(1〜3)まで持てる。空いている後ろのストックへ順に入る。
   giveItem(k) {
-    if (k.item && k.item2) return;                      // 2つとも埋まっていたら取れない
+    if (k.itemFull) return;                             // すべて埋まっていたら取れない
     // 順位に応じた重み(後ろほど強いアイテム)
     const place = k.place;
     let pool;
@@ -1618,21 +1639,18 @@ class Game {
     else if (place === 2) pool = ['green', 'red', 'mushroom', 'mushroom', 'banana', 'grapple', 'bomb', 'mushroom3', 'goldshroom'];
     else pool = ['mushroom', 'red', 'star', 'grapple', 'grapple', 'bomb', 'star', 'mushroom3', 'goldshroom', 'goldshroom'];
     const type = pool[Math.floor(Math.random() * pool.length)];
-    const cnt = (type === 'mushroom3') ? 3 : 1;         // 3つキノコは3回使える
-    if (!k.item) { k.item = type; k.itemCount = cnt; }  // 1ストック目が空ならそこへ
-    else { k.item2 = type; k.itemCount2 = cnt; }        // 埋まっていれば2ストック目(まだ使えない)
+    k.addItem(type, (type === 'mushroom3') ? 3 : 1);    // 空いている後ろのストックへ(3つキノコは3回)
     k.itemFlash = 0.6;
     audio.sfxPickup();
   }
-  // 1ストック目を使い切ったら、2ストック目を1ストック目へ繰り上げる
+  // 1ストック目を使い切ったので取り除く → 後ろのストックが1つずつ繰り上がる
   _shiftItem(k) {
-    if (k.item || !k.item2) return;
-    k.item = k.item2; k.itemCount = k.itemCount2;
-    k.item2 = null; k.itemCount2 = 0;
-    k.itemShift = 0.5;                                  // 繰り上がりの表示用
+    if (k.stock.length === 0) return;
+    k.stock.shift();
+    if (k.stock.length) k.itemShift = 0.5;              // 繰り上がりの表示用
   }
 
-  // 使えるのは1ストック目だけ(2ストック目は持っているだけ)
+  // 使えるのは1ストック目だけ(2つ目以降は持っているだけ)
   useItem(k) {
     const type = k.item; if (!type) return;
     // 金キノコ: 発動から GOLD_TIME 秒のあいだ「押すたびに何度でも」ダッシュできる。
@@ -1649,10 +1667,9 @@ class Game {
     if (type === 'mushroom3') {
       k.boostTimer = Math.max(k.boostTimer, 1.4); audio.sfxBoost();
       k.itemCount = (k.itemCount || 1) - 1;
-      if (k.itemCount <= 0) { k.item = null; k.itemCount = 0; this._shiftItem(k); }
+      if (k.itemCount <= 0) this._shiftItem(k);
       return;
     }
-    k.item = null; k.itemCount = 0;
     this._shiftItem(k);
     const fx = Math.cos(k.angle), fy = Math.sin(k.angle);
     // 投擲物は自機の少し前方(画面に映る位置)から発射。発射光も出す。
@@ -1745,7 +1762,7 @@ class Game {
     // アイテムボックス: カートの「先端」が触れたときだけ取得
     const boxR = this.track.tile * 0.66;
     for (const k of this.karts) {
-      if (k.finished || k.gone || k.itemFlash > 0 || (k.item && k.item2)) continue;   // 2ストックまで
+      if (k.finished || k.gone || k.itemFlash > 0 || k.itemFull) continue;   // 持てる数(1〜3)まで
       const nx = k.x + Math.cos(k.angle) * (k.radius + 12);   // 先端
       const ny = k.y + Math.sin(k.angle) * (k.radius + 12);
       for (const b of this.track.itemBoxes) {
@@ -2977,32 +2994,36 @@ class Game {
 
     // 持ちアイテム表示(各画面の上中央に大きく。取得直後は光る)。
     // タイムアタックは通常非表示だが、アイテムを持っている時(3つキノコ等)は表示する。
-    if (!timeMode || k.item || k.item2) {
+    if (!timeMode || k.stock.length) {
       const bs = 70, cx = vp.x + vp.w / 2, ixc = cx - bs / 2, iyc = vp.y + 22;
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'alphabetic';
       ctx.fillText('アイテム', cx, iyc - 4);
-      // 2ストック目(NEXT): 小さめの枠を右隣に。持っているだけで、1つ目を使うまで使えない。
-      {
-        const ns = 44, nx = ixc + bs + 8, ny = iyc + bs - ns;
-        ctx.globalAlpha = k.item2 ? 1 : 0.5;
+      // 2つ目以降(NEXT): 小さめの枠を右隣に並べる。持っているだけで、1つ目を使うまで使えない。
+      const ns = 44, ngap = 6;
+      for (let i = 1; i < k.maxStock; i++) {
+        const s = k.stock[i];
+        const nx = ixc + bs + 8 + (i - 1) * (ns + ngap), ny = iyc + bs - ns;
+        ctx.globalAlpha = s ? 1 : 0.5;
         ctx.fillStyle = 'rgba(0,0,0,0.45)'; this._roundRect(ctx, nx, ny, ns, ns, 9); ctx.fill();
-        ctx.lineWidth = 2; ctx.strokeStyle = k.item2 ? 'rgba(255,210,63,0.75)' : 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 2; ctx.strokeStyle = s ? 'rgba(255,210,63,0.75)' : 'rgba(255,255,255,0.18)';
         this._roundRect(ctx, nx, ny, ns, ns, 9); ctx.stroke();
-        ctx.fillStyle = k.item2 ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)';
-        ctx.font = 'bold 9px sans-serif'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText('NEXT', nx + ns / 2, ny - 3);
-        if (k.item2) {
+        if (i === 1) {                                   // ラベルは1つだけ(2つ目の枠の上)
+          ctx.fillStyle = s ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)';
+          ctx.font = 'bold 9px sans-serif'; ctx.textBaseline = 'alphabetic';
+          ctx.fillText('NEXT', nx + ns / 2, ny - 3);
+        }
+        if (s) {
           ctx.save();
           ctx.translate(nx + ns / 2, ny + ns / 2 + 1); ctx.scale(0.62, 0.62);   // アイコンを小さく
-          this._drawItemIcon(ctx, k.item2, 0, 0);
+          this._drawItemIcon(ctx, s.type, 0, 0);
           ctx.restore();
-          if (k.itemCount2 > 1) {                        // 残り回数バッジ(3つキノコ)
+          if (s.count > 1) {                             // 残り回数バッジ(3つキノコ)
             const bx = nx + ns - 7, by = ny + 7;
             ctx.fillStyle = '#e8412e'; ctx.beginPath(); ctx.arc(bx, by, 9, 0, TAU); ctx.fill();
             ctx.lineWidth = 1.6; ctx.strokeStyle = '#fff'; ctx.stroke();
             ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'middle';
-            ctx.fillText('×' + k.itemCount2, bx, by + 1);
+            ctx.fillText('×' + s.count, bx, by + 1);
           }
         }
         ctx.globalAlpha = 1;

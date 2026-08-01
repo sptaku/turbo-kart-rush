@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>ターボ・カート・ラッシュ</title>
-  <link rel="stylesheet" href="css/style.css?v=20260801" />
+  <link rel="stylesheet" href="css/style.css?v=20260802" />
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -37,6 +37,7 @@
         <button class="ghost" id="dmg-toggle">💥 自分のダメージ: 1/2</button>
         <button class="ghost" id="dmg-cpu-toggle">💥 CPUのダメージ: 通常</button>
         <button class="ghost" id="offcourse-toggle">🌱 コース外ダメージ: あり</button>
+        <button class="ghost" id="itemslot-toggle">🎁 アイテム所持数: 2個</button>
         <button class="ghost" id="tatriple-toggle">🍄 タイムアタックで3つキノコ所持: ON</button>
         <button class="ghost" id="ghost-toggle">👻 タイムアタックのゴースト: ON</button>
         <button class="ghost" id="speed-toggle">🏎 最高速: 通常</button>
@@ -180,7 +181,7 @@
         <h3>アイテム</h3>
         <p>🍄キノコ=加速 / 🍄×3 3つキノコ=キノコ3回ぶん / ✨🍄<b>金キノコ</b>=7.5秒間ダッシュし放題 / 🍌バナナ=設置 / 🟢グリーンボール=直進 / 🔴レッドボール=追尾 / ⭐スター=無敵＆BGMチェンジ / 💣ボムへい=爆発 / 🪝<b>グラップル・ダッシュ</b>=前のカートにロックオンして引き寄せ（独自要素・マリオカートに無い）</p>
         <p><b>✨🍄 金キノコ</b>：使うと<b>7.5秒間だけ何度でもダッシュ</b>できます。<b>連打すればその間ずっと加速</b>！（1秒に1回くらい押せば加速が途切れません）。使っても枠から消えず、残り時間がバッジで出ます。時間切れで自動的に消えて次のアイテムが繰り上がります。<b>1位では出ません</b>（後ろほど出やすい逆転アイテム）。</p>
-        <p><b>アイテムは2ストック</b>：2つまで持てますが、<b>使えるのは1つ目だけ</b>。2つ目（小さい「NEXT」枠）は<b>持っているだけ</b>で、1つ目を使うと<b>自動で繰り上がって</b>使えるようになります。1つ持っていれば？ブロックをもう1つ取れます。</p>
+        <p><b>アイテムのストック</b>：タイトルの <b>「🎁 アイテム所持数」</b> で <b>1個／2個／3個</b> を選べます（既定2個）。<b>使えるのは常に1つ目だけ</b>。2つ目以降（小さい「NEXT」枠）は<b>持っているだけ</b>で、1つ目を使うと<b>自動で繰り上がって</b>使えるようになります。空きがあれば？ブロックをもう1つ取れます。</p>
       </div>
       <button class="ghost" data-back="title">← もどる</button>
     </section>
@@ -242,10 +243,10 @@
   </div>
   <div id="tc-rotate">↔ 横向きでのプレイがおすすめです</div>
 
-  <script src="js/tracks.js?v=20260801"></script>
-  <script src="js/audio.js?v=20260801"></script>
-  <script src="js/input.js?v=20260801"></script>
-  <script src="js/game.js?v=20260801"></script>
-  <script src="js/main.js?v=20260801"></script>
+  <script src="js/tracks.js?v=20260802"></script>
+  <script src="js/audio.js?v=20260802"></script>
+  <script src="js/input.js?v=20260802"></script>
+  <script src="js/game.js?v=20260802"></script>
+  <script src="js/main.js?v=20260802"></script>
 </body>
 </html>

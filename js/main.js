@@ -59,6 +59,8 @@
   try { const v = localStorage.getItem('ta_triple'); if (v != null) taTriple = (v === '1'); } catch (e) {}
   let ghostOn = true;                        // タイムアタックでゴースト(自己ベストの走り)と走る(既定ON)
   try { const v = localStorage.getItem('ta_ghost_on'); if (v != null) ghostOn = (v === '1'); } catch (e) {}
+  let itemSlots = 2;                         // アイテムを持てる数(1〜3・既定2)。設定は保存
+  try { const v = parseInt(localStorage.getItem('item_slots') || '', 10); if (v >= 1 && v <= 3) itemSlots = v; } catch (e) {}
   let musicStyle = 'chip'; // 'chip'(ピコピコ) | 'orchestra'(オーケストラ)
   let richGfx = true;     // リッチ(沿道装飾・空) / シンプル
   let aiDiff = 'normal';  // CPUの強さ: weak | normal | strong | super
@@ -227,6 +229,7 @@
       cpuDamageRandom: DMG_CPU[dmgIdxC].random || null,
       cpuDamagePool: DMG_CPU[dmgIdxC].random ? buildCpuPool(DMG_CPU[dmgIdxC].random) : null,
       speedMul: SPEED_OPTS[speedIdx], accuratePhysics, offcourseDamage,
+      itemSlots,                                                       // アイテムを持てる数(1〜3)
       startItem: (mode === 'time' && taTriple) ? 'mushroom3' : null,   // TAは最初から3つキノコ(設定)
       ghost: (mode === 'time' && ghostOn) ? loadGhost(trackIndex) : null };   // TAはゴーストと同時走行(設定)
     if (mode === 'gp' && gp) opts.gpRace = { index: gp.idx + 1, total: gp.seq.length };
@@ -248,7 +251,7 @@
     try {
       localStorage.setItem(GP_KEY, JSON.stringify({
         seq: gp.seq, idx: resumeIdx, points: gp.points, info: gp.info, allFirst: gp.allFirst, retired: gp.retired || [],
-        s: { gpCpu, aiDiff, transModes, mirror, mirrorControls, pedalSwap, chaosLevel, gpReviveCpu, dmgIdxP, dmgIdxC, speedIdx, accuratePhysics, offcourseDamage },
+        s: { gpCpu, aiDiff, transModes, mirror, mirrorControls, pedalSwap, chaosLevel, gpReviveCpu, dmgIdxP, dmgIdxC, speedIdx, accuratePhysics, offcourseDamage, itemSlots },
       }));
     } catch (e) {}
     refreshGPResume();
@@ -285,6 +288,7 @@
     if (s.speedIdx != null && s.speedIdx >= 0 && s.speedIdx < SPEED_OPTS.length) { speedIdx = s.speedIdx; updateSpeedUI(); }
     accuratePhysics = !!s.accuratePhysics; updatePhysUI();
     offcourseDamage = (s.offcourseDamage !== false); updateOffUI();
+    if (s.itemSlots >= 1 && s.itemSlots <= 3) { itemSlots = s.itemSlots; updateSlotUI(); }
     mode = 'gp'; players = 1;
     gp = { seq: v.seq, idx: v.idx, points: v.points || {}, info: v.info || {}, allFirst: !!v.allFirst, retired: v.retired || [] };
     beginRace(gp.seq[gp.idx]);
@@ -662,6 +666,16 @@
     updateTaUI();
   });
   updateTaUI();
+
+  // 🎁 アイテムを持てる数(1〜3個)。使えるのは常に1つ目で、2つ目以降は持っているだけ。設定は保存。
+  const slotBtn = document.getElementById('itemslot-toggle');
+  function updateSlotUI() { slotBtn.textContent = '🎁 アイテム所持数: ' + itemSlots + '個'; }
+  slotBtn.addEventListener('click', () => {
+    itemSlots = (itemSlots % 3) + 1;                 // 1 → 2 → 3 → 1
+    try { localStorage.setItem('item_slots', String(itemSlots)); } catch (e) {}
+    updateSlotUI();
+  });
+  updateSlotUI();
 
   // 👻 タイムアタックのゴースト(自己ベストの走りと同時に走る)ON/OFF。設定は保存。
   const ghostBtn = document.getElementById('ghost-toggle');
