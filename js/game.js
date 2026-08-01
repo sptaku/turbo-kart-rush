@@ -974,7 +974,20 @@ class Kart {
     }
     const aim = P[aimIdx];
     const aim2 = gateAim ? aim : P[(aimIdx + 4) % n];
-    const desired = Math.atan2(aim.y - this.y, aim.x - this.x);
+    // 横風の補正: 先読み点を「風上へ」ずらして狙う(そのぶん斜めに構えて流されを打ち消す)。
+    //   これが無いとCPUが風下の罠(タイヤ列・奈落)へ次々に落ちてレースが成立しない
+    //   (プレイヤーは自分でハンドルを当てて耐える)。
+    let ax = aim.x, ay = aim.y;
+    if (T.winds.length && this.airZ <= 0) {
+      let wx = 0, wy = 0, nw = 0;
+      for (const w of T.winds)
+        if (dist2(this.x, this.y, w.x, w.y) < T.windR * T.windR * 2.6) { wx += w.dx; wy += w.dy; nw++; }
+      if (nw) {
+        const tLook = Math.hypot(ax - this.x, ay - this.y) / Math.max(180, sp);   // 先読み点までの時間
+        ax -= (wx / nw) * T.windForce * tLook; ay -= (wy / nw) * T.windForce * tLook;
+      }
+    }
+    const desired = Math.atan2(ay - this.y, ax - this.x);
     const diff = angNorm(desired - this.angle);
     // 先のカーブのきつさ(局所的に)
     const curve = Math.abs(angNorm(Math.atan2(aim2.y - aim.y, aim2.x - aim.x) - desired));
@@ -988,19 +1001,6 @@ class Kart {
     else if (sp > targetSpeed) throttle = 0.35;        // 緩める
     // 芝生に出たら戻すため強めに切る
     if (T.surfaceAt(this.x, this.y) === 'grass') { throttle = Math.max(throttle, 0.6); steer = clamp(diff * 2.3, -1, 1); }
-    // 横風の補正: 流される分だけ風上へ切る。これが無いとCPUが風下の罠(タイヤ列・奈落)へ
-    //   次々に落ちてレースが成立しない(プレイヤーは自分でハンドルを当てて耐える)。
-    if (T.winds.length && this.airZ <= 0) {
-      let wx = 0, wy = 0;
-      for (const w of T.winds)
-        if (dist2(this.x, this.y, w.x, w.y) < T.windR * T.windR) { wx += w.dx; wy += w.dy; }
-      if (wx || wy) {
-        const rx = -Math.sin(this.angle), ry = Math.cos(this.angle);     // 自分から見た右方向
-        const lat = (wx * rx + wy * ry) * T.windForce;                   // 右へ流される量(px/s)
-        steer = clamp(steer - lat / 240, -1, 1);
-      }
-    }
-
     // 落雷の回避: 予兆が出ている輪について「落ちる瞬間に自分が輪の中に居るか」を予測し、
     //   居そうなら手前で減速して見送る(既に輪の中なら全開で走り抜ける)。
     //   CPUも避けられるようにしておかないと、雷だけでCPUが次々脱落してレースが成立しない。

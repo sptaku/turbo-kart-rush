@@ -313,7 +313,8 @@ function windLine(ax, ay, bx, by, step, dx, dy) {
   return out;
 }
 const T12_WINDS = windLine(54, 131, 108, 129, 5, 0, 1)        // 下ストレート: 下(外)へ押される
-  .concat(windLine(138, 104, 138, 64, 5, 1, 0));               // 右ストレート: 右(外)へ押される
+  .concat(windLine(138, 98, 138, 64, 5, 1, 0));                // 右ストレート: 右(外)へ押される
+// ※風は直角コーナーの出口から少し先で吹き始める(立ち上がり中に真横から吹くと誰も制御できない)
 // 意味のある分岐×3(どれも「報酬」と「代償」をセットにする):
 //   BR1「タイヤ・シュート」…下ストレートの外側=風下レーン。転がるタイヤの間を抜ける高リスク。
 //     見返りは終盤にある★ワープ・ゲート(直角コーナーまで一気に短縮)。
@@ -331,12 +332,17 @@ const T12_WARPS = [
 ];
 // 落雷(スコール)×5。半径は道幅の半分(2.9)より小さく、外側を通れば避けられる。
 const T12_BOLTS = [
-  { x: 86, y: 132, r: 2.2, period: 4.4, phase: 0.0 },    // 下ストレート(横風と重なる最難関)
-  { x: 138, y: 88, r: 2.3, period: 5.2, phase: 1.9 },    // 右ストレート
-  { x: 86, y: 44, r: 2.2, period: 3.9, phase: 3.1 },     // 階段ジグザグ
+  { x: 70, y: 131, r: 2.2, period: 3.8, phase: 0.0 },    // 下ストレート前半(横風と重なる最難関)
+  { x: 98, y: 130, r: 2.2, period: 4.6, phase: 2.1 },    // 下ストレート後半
+  { x: 138, y: 100, r: 2.2, period: 4.2, phase: 1.1 },   // 右ストレート(ジャンプの手前)
+  { x: 86, y: 44, r: 2.2, period: 3.6, phase: 3.1 },     // 階段ジグザグ
   { x: 96, y: 32, r: 2.2, period: 4.9, phase: 0.7 },     // BR3オーバーパス(分岐の代償)
-  { x: 54, y: 84, r: 2.3, period: 5.6, phase: 2.3 },     // 中央ストレート(ヘアピン手前)
+  { x: 54, y: 84, r: 2.3, period: 5.1, phase: 2.3 },     // 中央ストレート(ヘアピン手前)
+  { x: 46, y: 108, r: 2.2, period: 4.4, phase: 3.7 },    // ヘアピン出口(立ち上がりを狙う)
 ];
+// ★ジャンプ必須の奈落: 右ストレート(横風の中)を上へ抜ける途中で走路がごっそり途切れる。
+//   全幅のジャンプ台列を踏んで飛び越える。速度が足りない/スピン中だと落ちて大ダメージ。
+const T12_JUMP = jumpGap(138, 80, 0, -1);
 // 動く障害物=★大きな工事用タイヤ。風下(流される側)に列で置き、風に負けるとぶつかる。
 const T12_MOVERS = [
   { x: 64, y: 134.6, dx: 1, dy: 0, range: 2.0, speed: 1.7, phase: 0.0, kind: 'tire' },   // 横風1の風下
@@ -348,6 +354,10 @@ const T12_MOVERS = [
   { x: 68, y: 92, dx: 1, dy: 0, range: 2.2, speed: 2.2, phase: 1.4, kind: 'tire' },      // ヘアピン入口
   { x: 60, y: 114, dx: 1, dy: 0, range: 1.8, speed: 2.6, phase: 2.7, kind: 'tire' },     // ヘアピン底(罠)
   { x: 134, y: 104, dx: 1, dy: 0, range: 1.6, speed: 2.4, phase: 0.3, kind: 'tire' },    // BR2の代償
+  { x: 86, y: 44, dx: 0, dy: 1, range: 2.4, speed: 2.3, phase: 1.9, kind: 'tire' },      // 階段ジグザグ(横切る)
+  { x: 52, y: 38, dx: 0, dy: 1, range: 2.2, speed: 2.5, phase: 0.6, kind: 'tire' },      // 階段の出口(横切る)
+  { x: 32, y: 78, dx: 1, dy: 0, range: 2.2, speed: 2.1, phase: 2.4, kind: 'tire' },      // 中央への入口
+  { x: 92, y: 134.4, dx: 1, dy: 0, range: 2.0, speed: 2.1, phase: 3.0, kind: 'tire' },   // 横風1の風下(追加)
 ];
 const T12_BR_ITEMS = [[96, 32], [56, 30]];         // BR3: ？ブロック(遠回りの報酬)
 const T12_BR_OIL = [[126, 118], [134, 104]];       // BR2: 近道の代償=オイル
@@ -716,7 +726,7 @@ const TRACKS = [
     roadHalf: 2.8, shoulder: 0.8,
     music: 'race3',
     hazardType: 'oil',                           // 工場のこぼれオイル
-    windForce: 195,                              // 横風は全コース最強(逆らわないと風下の罠へ)
+    windForce: 230,                              // 横風は全コース最強(逆らわないと風下の罠へ)
     theme: {
       sky: '#3a4250', skyDk: '#1b202a',          // 嵐の鉛色の空
       grass: '#4a4034', grassDk: '#33291f',      // 泥・砂利
@@ -732,9 +742,11 @@ const TRACKS = [
     bolts: T12_BOLTS,                            // ★落雷×5
     movers: T12_MOVERS,                          // ★動くタイヤ(風下の列＋走路を横切る)
     winds: T12_WINDS,                            // ★横風×2(流された先にタイヤ=ダメージ)
+    ramps: T12_JUMP.ramps,                       // ★横風の中のジャンプ台(全幅)
+    gaps: T12_JUMP.gaps,                         // ★その先の奈落(飛べないと落ちる)
     items: itemRow(T12, [5, 10, 16, 22], [-0.8, 0, 0.8]).concat(T12_BR_ITEMS),
     boosts: pick(T12, [3, 14]),
-    hazards: pick(T12, [19, 21]).concat(T12_BR_OIL),   // ヘアピン底と出口にオイル＋BR2の代償
+    hazards: pick(T12, [19, 21]).concat(T12_BR_OIL),   // ヘアピン底/出口のオイル＋BR2の代償
     recover: pick(T12, [8, 16]),                 // ライフ回復ピット(長丁場なので2箇所)
   },
 ];

@@ -30,7 +30,13 @@ const newGame = (opts = {}) => {
   const T = g.track;
   t('意味のある分岐が2つ以上ある', T.branchPaths.length >= 2);
   t('意味のあるワープが2つ以上ある', T.warps.length >= 2);
-  t('落雷ポイントがある', T.bolts.length >= 4);
+  t('落雷ポイントがある', T.bolts.length >= 6);
+  // 横風の中のジャンプ(全幅のジャンプ台＋その先の奈落)
+  t('ジャンプ台が走路の幅いっぱいに並ぶ', T.ramps.length >= 10);
+  t('ジャンプ台の先に奈落がある', T.gaps.length >= 20);
+  const rampY = Math.max(...T.ramps.map((r) => r.y)), gapY = Math.max(...T.gaps.map((g) => g.y));
+  t('奈落はジャンプ台の進行方向の先にある', gapY < rampY);   // 右ストレートは上(-y)向き
+  t('ジャンプは横風ゾーンの中にある', T.winds.some((w) => Math.hypot(w.x - T.ramps[0].x, w.y - T.ramps[0].y) < T.tile * 8));
   t('横風ゾーンがある(2本の直線)', T.winds.length >= 8);
   t('動くタイヤが配置されている', T.movers.filter((m) => m.kind === 'tire').length >= 6);
   // 単純な円ではない=方位が何度も反転する複雑な形
