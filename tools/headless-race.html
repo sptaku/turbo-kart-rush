@@ -106,6 +106,9 @@
   }
   // headless では #game canvas が合成されず黒くなることがあるため、?shot=1 で img に写す
   if (q.get('shot') === '1') {
+    g.stop();                  // rAFループを止めて、この1コマで固定する(撮影用)
+    g.hintTimer = 0; g.state = 'racing'; g.countdown = 0;
+    g.render();
     const im = document.createElement('img');
     im.style.cssText = 'position:absolute;left:0;top:0';
     im.src = document.getElementById('game').toDataURL();

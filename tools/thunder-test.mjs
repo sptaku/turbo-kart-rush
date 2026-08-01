@@ -29,7 +29,8 @@ const strikeAt = (b, cycle = 1) => cycle * b.period + b.warn - b.phase + BOLT_ST
 const g0 = newGame();
 const B = g0.track.bolts;
 t('リオに落雷ポイントがある', B.length >= 4);
-t('落雷は最難関コースだけ(他コースは無し)', TRACKS.every((x) => x.id === 'rio' || !(x.bolts || []).length));
+t('落雷は最難関コースだけ(易しいコースには無し)',
+  TRACKS.every((x) => ['rio', 'cyclone'].includes(x.id) || !(x.bolts || []).length));
 t('危険範囲は道幅の半分より小さい(外側を通れば避けられる)',
   B.every((b) => b.r < TRACKS[RIO].roadHalf * TRACKS[RIO].tile));
 t('周期はバラバラ(同時に落ちて逃げ場が無くならない)', new Set(B.map((b) => b.period)).size === B.length);

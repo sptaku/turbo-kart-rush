@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>ターボ・カート・ラッシュ</title>
-  <link rel="stylesheet" href="css/style.css?v=20260802" />
+  <link rel="stylesheet" href="css/style.css?v=20260803" />
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -27,7 +27,7 @@
       <p class="tag">ターボ・カート・ラッシュ</p>
       <div class="btn-col">
         <button class="big" id="gp-resume" hidden>▶ グランプリの続きから</button>
-        <button class="big" data-mode="gp">🏆 グランプリ（CPU 1〜25台・全12コース連戦／動く障害物・ワープ・突風・超超超超超超超激ムズ含む）</button>
+        <button class="big" data-mode="gp">🏆 グランプリ（CPU 1〜25台・全13コース連戦／動くタイヤ・ワープ・突風・落雷・超超超超超超超超激ムズ含む）</button>
         <button class="big" data-mode="time">⏱ タイムアタック（1人・タイム勝負）</button>
         <button class="big" data-mode="vs">🆚 VS（1〜8人＋CPU 0〜20台・人数を選べる）</button>
         <button class="ghost" id="to-help">あそびかた / そうさ</button>
@@ -56,7 +56,7 @@
     <!-- グランプリ 設定 -->
     <section id="screen-gp" class="screen">
       <h2>グランプリ設定</h2>
-      <p class="tag">全12コース連戦・ポイント制</p>
+      <p class="tag">全13コース連戦・ポイント制</p>
       <div class="vs-row">
         <span class="vs-label">CPUの数（1〜25）</span>
         <div class="stepper">
@@ -170,8 +170,12 @@
         <p>タイトルの <b>⚙ ミッション</b> で AT（全自動）→ セミAT（自動＋手動シフト可）→ MT（完全手動）を切替。MT/セミAT では上のシフトキーでギア（N/R/1〜5）を操作します。</p>
       </div>
       <div class="item-legend">
-        <h3>⚡ 落雷（リオ・カーニバル）</h3>
-        <p>最高難度コース「リオ・カーニバル」の5箇所には<b>雷が周期的に落ちます</b>。まず<b>暗雲</b>と路面の<b>黄色い危険リング</b>＋<b>縮む白いガイドリング</b>が出て、重なった瞬間に落雷（直前はリングがオレンジに変化）。<b>落ちた瞬間にリングの中に居なければ当たりません</b>——手前で減速して見送る／先に抜ける／リングの外側を通る、のどれでも回避できます（分岐ルートも安全地帯）。直撃は<b>大ダメージ＋スピン</b>ですが、<b>落雷だけでライフが尽きることはありません</b>。⭐スター中は無効。</p>
+        <h3>🏭 サイクロン・ワークス（最難関コース）</h3>
+        <p>単純な円ではなく<b>直角コーナー・階段ジグザグ・大きな弧・きついヘアピン</b>を合成した複雑なレイアウト。<b>🌀横風が2箇所</b>（下ストレートは外＝下へ、右ストレートは外＝右へ）で吹き続け、<b>風下には大きな工事用タイヤが転がっています</b>——押し負けてぶつかると<b>大ダメージ＋スピン＋大きく弾かれ</b>ます（風の中では<b>風の音</b>が鳴ります）。<b>意味のある分岐×3</b>（外側のタイヤ・レーン／オイルの近道／落雷つき高架ルート）と<b>ワープ×2</b>（どちらも分岐の奥にあり、リスクを取った人だけが使える）、さらに<b>⚡落雷×5</b>。</p>
+      </div>
+      <div class="item-legend">
+        <h3>⚡ 落雷（リオ・カーニバル／サイクロン・ワークス）</h3>
+        <p>最高難度の2コースの各5箇所には<b>雷が周期的に落ちます</b>。まず<b>暗雲</b>と路面の<b>黄色い危険リング</b>＋<b>縮む白いガイドリング</b>が出て、重なった瞬間に落雷（直前はリングがオレンジに変化）。<b>落ちた瞬間にリングの中に居なければ当たりません</b>——手前で減速して見送る／先に抜ける／リングの外側を通る、のどれでも回避できます（分岐ルートも安全地帯）。直撃は<b>大ダメージ＋スピン</b>ですが、<b>落雷だけでライフが尽きることはありません</b>。⭐スター中は無効。</p>
       </div>
       <div class="item-legend">
         <h3>👻 タイムアタックのゴースト</h3>
@@ -243,10 +247,10 @@
   </div>
   <div id="tc-rotate">↔ 横向きでのプレイがおすすめです</div>
 
-  <script src="js/tracks.js?v=20260802"></script>
-  <script src="js/audio.js?v=20260802"></script>
-  <script src="js/input.js?v=20260802"></script>
-  <script src="js/game.js?v=20260802"></script>
-  <script src="js/main.js?v=20260802"></script>
+  <script src="js/tracks.js?v=20260803"></script>
+  <script src="js/audio.js?v=20260803"></script>
+  <script src="js/input.js?v=20260803"></script>
+  <script src="js/game.js?v=20260803"></script>
+  <script src="js/main.js?v=20260803"></script>
 </body>
 </html>

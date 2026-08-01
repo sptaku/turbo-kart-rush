@@ -44,6 +44,7 @@ const SCENERY_BY_TRACK = {
   magma: ['lavarock', 'flame', 'lavarock', 'spike'],
   void: ['pillar', 'spike', 'pillar', 'sign'],
   rio: ['palm', 'palm', 'tree', 'palm'],   // ブラジル(ビーチ/トロピカル)
+  cyclone: ['pillar', 'sign', 'rock', 'pillar'],   // 嵐の工場(鉄骨・標識)
 };
 
 // 車種(後方視点シルエットの違い)。kindごとに翼/車体/タイヤ/キャビンを変える
@@ -95,6 +96,11 @@ const GOLD_BOOST = 1.1;    // 1回の押下で得るブーストの長さ(押し
 const GOLD_CD = 0.16;      // 連打の間隔(音と処理の間引き)
 // アイテムを持てる数(ストック)。タイトルの設定で 1〜3 を選べる(既定2)。
 const ITEM_STOCK_MIN = 1, ITEM_STOCK_MAX = 3, ITEM_STOCK_DEFAULT = 2;
+// 動く障害物の種類(movers の kind)。r=半径(タイル比) dmg=接触ダメージ push=弾かれる強さ
+const MOVER_KINDS = {
+  ball: { r: 0.42, dmg: 10, push: 200 },   // サッカーボール(リオ)
+  tire: { r: 0.54, dmg: 15, push: 320 },   // 大きな工事用タイヤ: 重くて痛い
+};
 
 // ============================ Track =======================================
 class Track {
@@ -172,7 +178,9 @@ class Track {
       let dx = w.dx, dy = w.dy; if (mirror) dx = -dx;
       const L = Math.hypot(dx, dy) || 1;
       const bx = c * this.tile, by = r * this.tile;
-      return { bx, by, dx: dx / L, dy: dy / L, range: (w.range || 3) * this.tile, speed: w.speed || 2, phase: w.phase || 0, cx: bx, cy: by, r: this.tile * 0.42, kind: w.kind || 'ball' };
+      const kind = w.kind || 'ball', S = MOVER_KINDS[kind] || MOVER_KINDS.ball;
+      return { bx, by, dx: dx / L, dy: dy / L, range: (w.range || 3) * this.tile, speed: w.speed || 2, phase: w.phase || 0,
+        cx: bx, cy: by, kind, r: this.tile * S.r, dmg: S.dmg, push: S.push };
     });
     // 落雷(サンダー): 決まった地点に周期的に落ちる。予兆(暗雲＋光る輪)→落雷。
     //   判定は「落ちた瞬間に輪の中に居たか」だけ(通り抜け中ずっと危険ではない)。
@@ -980,6 +988,19 @@ class Kart {
     else if (sp > targetSpeed) throttle = 0.35;        // 緩める
     // 芝生に出たら戻すため強めに切る
     if (T.surfaceAt(this.x, this.y) === 'grass') { throttle = Math.max(throttle, 0.6); steer = clamp(diff * 2.3, -1, 1); }
+    // 横風の補正: 流される分だけ風上へ切る。これが無いとCPUが風下の罠(タイヤ列・奈落)へ
+    //   次々に落ちてレースが成立しない(プレイヤーは自分でハンドルを当てて耐える)。
+    if (T.winds.length && this.airZ <= 0) {
+      let wx = 0, wy = 0;
+      for (const w of T.winds)
+        if (dist2(this.x, this.y, w.x, w.y) < T.windR * T.windR) { wx += w.dx; wy += w.dy; }
+      if (wx || wy) {
+        const rx = -Math.sin(this.angle), ry = Math.cos(this.angle);     // 自分から見た右方向
+        const lat = (wx * rx + wy * ry) * T.windForce;                   // 右へ流される量(px/s)
+        steer = clamp(steer - lat / 240, -1, 1);
+      }
+    }
+
     // 落雷の回避: 予兆が出ている輪について「落ちる瞬間に自分が輪の中に居るか」を予測し、
     //   居そうなら手前で減速して見送る(既に輪の中なら全開で走り抜ける)。
     //   CPUも避けられるようにしておかないと、雷だけでCPUが次々脱落してレースが成立しない。
@@ -1260,6 +1281,7 @@ class Game {
     audio.resume();
     audio.playMusic(this.def.music);
     audio.startEngine();
+    if (this.track.winds.length) audio.startWind();   // 突風の音(風ゾーンのあるコースだけ)
 
     this.running = true;
     this.paused = false;
@@ -1274,14 +1296,16 @@ class Game {
     this._raf = null;
     audio.stopMusic();
     audio.stopEngine();
+    audio.stopWind();
   }
-  pause() { if (this.running && !this.paused) { this.paused = true; audio.stopMusic(); audio.stopEngine(); } }
+  pause() { if (this.running && !this.paused) { this.paused = true; audio.stopMusic(); audio.stopEngine(); audio.stopWind(); } }
   resume() {
     if (this.running && this.paused) {
       this.paused = false; this._last = performance.now();
       audio.resume();
       audio.playMusic(this.musicMode === 'star' ? 'star' : this.def.music);
       audio.startEngine();
+      if (this.track.winds.length) audio.startWind();
       this._loop();
     }
   }
@@ -1423,6 +1447,19 @@ class Game {
       eSr = Math.max(eSr, Math.min(1, Math.abs(h.speed) / h.baseMax));
     }
     audio.updateEngine(eThr, eSr);
+    // 突風の音(風ゾーンに近いほど大きく「ゴーッ」と鳴る)
+    if (this.track.winds.length) {
+      const R = this.track.windR;
+      let lv = 0;
+      for (const h of this.humans) {
+        if (h.finished || h._exploded) continue;
+        for (const w of this.track.winds) {
+          const d2 = dist2(h.x, h.y, w.x, w.y);
+          if (d2 < R * R * 2.25) lv = Math.max(lv, clamp(1 - Math.sqrt(d2) / (R * 1.5), 0, 1));   // 少し手前から聞こえる
+        }
+      }
+      audio.updateWind(lv);
+    }
   }
 
   // ---- 落雷(スコール) ---------------------------------------------------
@@ -1807,9 +1844,10 @@ class Game {
       for (const k of this.karts) {
         if (k.finished || k.airZ > 0 || k.gone || k.spinTimer > 0 || k.invincTimer > 0 || k.dashTimer > 0) continue;
         if (dist2(k.x, k.y, m.cx, m.cy) < (k.radius + m.r) * (k.radius + m.r)) {
-          k.startSpin(); k.hurt(10, this);
+          k.startSpin(); k.hurt(m.dmg || 10, this);
           let dx = k.x - m.cx, dy = k.y - m.cy; const d = Math.hypot(dx, dy) || 1;
-          k.kbx += (dx / d) * 200; k.kby += (dy / d) * 200;   // ボールに弾かれる
+          const push = m.push || 200;
+          k.kbx += (dx / d) * push; k.kby += (dy / d) * push;   // ぶつかって弾かれる(タイヤは重い)
           audio.sfxBump(0.6);
         }
       }
@@ -1889,6 +1927,7 @@ class Game {
   _showResults() {
     audio.stopMusic();
     audio.stopEngine();
+    audio.stopWind();
     // 未ゴールのカートを進捗順で追加
     const rest = this.karts.filter(k => !k.finished).sort((a, b) => b.progress - a.progress);
     const order = [...this.finishOrder, ...rest];
@@ -2851,8 +2890,38 @@ class Game {
     ctx.fillStyle = 'rgba(255,255,255,0.75)'; this._drawSpark(ctx, 0, 0, sc * 0.17); ctx.fill();
     ctx.restore();
   }
+  // 動く障害物: 大きな工事用タイヤ(転がる)。ぶつかるとスピン＋大きく弾かれる。
+  _spTire(ctx, P, m) {
+    const sc = clamp(P.scale * 78, 8, 300), u = sc / 40;
+    ctx.save(); ctx.translate(P.sx, P.sy - sc * 0.44);
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';                      // 接地影
+    ctx.beginPath(); ctx.ellipse(0, sc * 0.44, sc * 0.44, sc * 0.13, 0, 0, TAU); ctx.fill();
+    ctx.rotate(this.time * 3.2 + m.phase);                   // 転がる回転
+    const R = 20 * u;
+    const g = ctx.createRadialGradient(-R * 0.35, -R * 0.35, R * 0.15, 0, 0, R);
+    g.addColorStop(0, '#4a4f57'); g.addColorStop(0.6, '#23262b'); g.addColorStop(1, '#101215');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#0a0b0d'; ctx.lineWidth = 1.6 * u;    // トレッド(溝)
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * R * 0.72, Math.sin(a) * R * 0.72);
+      ctx.lineTo(Math.cos(a) * R * 0.99, Math.sin(a) * R * 0.99);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#b9c2cc'; ctx.beginPath(); ctx.arc(0, 0, R * 0.42, 0, TAU); ctx.fill();   // ホイール
+    ctx.fillStyle = '#7c8794'; ctx.beginPath(); ctx.arc(0, 0, R * 0.16, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#7c8794'; ctx.lineWidth = 2.2 * u;
+    for (let i = 0; i < 5; i++) {                            // スポーク
+      const a = (i / 5) * TAU;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * R * 0.38, Math.sin(a) * R * 0.38); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // 動く障害物: サッカーボール(転がり回転＋弾む)。ブラジルらしさ。
   _spMover(ctx, P, m) {
+    if (m.kind === 'tire') return this._spTire(ctx, P, m);
     const sc = clamp(P.scale * 62, 8, 260), u = sc / 40;
     const bounce = Math.abs(Math.sin(this.time * 6 + m.phase)) * 6 * u;   // 弾む
     ctx.save(); ctx.translate(P.sx, P.sy - sc * 0.42 - bounce);

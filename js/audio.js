@@ -171,6 +171,7 @@ class AudioSystem {
     this.musicGain = null;
     this.sfxGain = null;
     this.noiseBuf = null;
+    this.wind = null;        // 突風の持続音(風ゾーンのあるコースだけ鳴る)
     this.muted = false;
 
     this.song = null;
@@ -415,6 +416,39 @@ class AudioSystem {
     o1.start(); o2.start();
     this.engine = { o1, o2, lp, g };
   }
+  // ---- 突風の音(ヒュオー) --------------------------------------------------
+  // ノイズをバンドパスで「ゴーッ」と鳴らし、風ゾーンへの入り具合(0〜1)で音量と音色を変える。
+  // すべて合成音(オリジナル)。風ゾーンが無いコースでは常に無音。
+  startWind() {
+    if (!this.ctx || this.wind || !this.noiseBuf) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf; src.loop = true;
+    const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.9;
+    const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 240;
+    const g = this.ctx.createGain(); g.gain.value = 0.0001;
+    src.connect(bp).connect(hp).connect(g); g.connect(this.sfxGain);
+    src.start();
+    this.wind = { src, bp, g, lv: 0 };
+  }
+  // level: 0=風の外 / 1=風ゾーンの中心。うねり(ゆらぎ)を足して自然な突風に。
+  updateWind(level) {
+    if (!this.wind || !this.ctx) return;
+    const t = this.ctx.currentTime, w = this.wind;
+    const lv = Math.max(0, Math.min(1, level || 0));
+    w.lv = lv;
+    const gust = 0.75 + 0.25 * Math.sin(t * 2.7) * Math.sin(t * 1.3);   // ゆっくりしたうねり
+    w.g.gain.setTargetAtTime(lv > 0 ? 0.16 * lv * gust : 0.0001, t, 0.12);
+    w.bp.frequency.setTargetAtTime(380 + lv * 900 * gust, t, 0.15);
+  }
+  stopWind() {
+    if (!this.wind) return;
+    const w = this.wind; this.wind = null;
+    try {
+      w.g.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.08);
+      w.src.stop(this.ctx.currentTime + 0.3);
+    } catch (err) { /* noop */ }
+  }
+
   updateEngine(throttle, speedRatio) {
     if (!this.engine || !this.ctx) return;
     const t = this.ctx.currentTime, e = this.engine;
